@@ -31,6 +31,13 @@ tiles, and what falls into a hole is reported through a callback.
 - **The rock** is a grid of solid tiles the caller owns and may rewrite in
   place. A body shoved into a tile goes back out the way it came in, not out
   the nearest face, so nothing is pushed through a wall a tile thick.
+- **The floor has heights**, one a tile, flat unless the caller gives them.
+  A body rests on the tile under it; a tile whose floor stands above a body's
+  middle is a wall to it, so a step is a wall from below and an edge from
+  above, and what goes over an edge falls to the tier it lands on. A body
+  resting on top of a pusher's box lies flat and is carried with it, which
+  is what a sliding platform is. Below the world's **bottom** a body has
+  fallen out of it, and is reported like one down a hole.
 - **Holes** are where bodies leave the world: as many as the caller gives it,
   each with a rim the floor slopes toward, a wall to the pit, and a depth at
   which what fell is reported and its slot freed.
@@ -53,13 +60,15 @@ const world = new World({
   grid: { cols: 96, rows: 64, originX: -144, originY: -96, tile: 3 },
   solid: rock, // one byte a tile, 1 for rock; rewrite it in place as the map changes
   radii: [0.42, 1.0], // one radius a kind of body
+  floor: heights, // one height a tile, for tiers and steps; left out, the floor is flat
+  bottom: -6, // below which a body has fallen out of the world
   holes: [{ x: 0, y: 0, radius: 5.5, depth: 14 }],
 });
 
 const coin = world.spawn(0, 12, -8, 3); // a kind, where, and how high; awake
 world.pushers = [blade]; // oriented boxes, from wherever the machines are this frame
 world.wakeNear(blade.x, blade.y, 6); // ahead of the blade, so sleepers are ready for it
-world.step(1 / 60, (kind, x, y, slot) => bank(kind)); // what fell in, and its slot is free again
+world.step(1 / 60, (kind, x, y, slot) => bank(kind)); // what fell in, or out of the bottom, and its slot is free again
 ```
 
 Everything a body is — `x`, `y`, `z`, velocity, radius `r`, orientation `q`,
@@ -74,9 +83,7 @@ many bodies each owner's pushers were shoving on the last step.
 The tests build a floor of their own and put things on it: a dropped body
 rests at its radius and sleeps; a hole collects once and frees the slot; a
 world has as many holes as it is given; the sleep bookkeeping stays straight
-while pushers churn a heap; nothing is shoved into or through the rock; a
-belt carries and a magnet pulls; chance from a seed gives the same world
-twice.
+while pushers churn a heap; nothing is shoved into or through the rock; a belt carries and a magnet pulls; a body rests on the tile under it, falls from a high tile to a low one, is stopped by a step from below, and is reported when it falls out of the bottom; one on a box's top lies flat and is carried; chance from a seed gives the same world twice.
 
 ## Licence
 

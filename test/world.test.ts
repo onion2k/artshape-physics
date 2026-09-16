@@ -276,6 +276,151 @@ describe('the world', () => {
     expect(Math.abs(m.x[j] - -40)).toBeLessThan(4);
   });
 
+  it('rests each body on the floor of the tile under it, and lets one fall from a high tile to a low one', () => {
+    // a step: the west half of the floor stands 4 high, the east half is at 0
+    const face = GRID.originX + 30 * GRID.tile;
+    const floor = new Float32Array(GRID.cols * GRID.rows);
+    for (let ty = 0; ty < GRID.rows; ty++) for (let tx = 0; tx < 30; tx++) floor[ty * GRID.cols + tx] = 4;
+    const w = world({ floor, holes: [] });
+    const high = w.spawn(0, face - 20, 10, 10),
+      low = w.spawn(0, face + 20, 10, 10);
+    for (let f = 0; f < 180; f++) w.step(DT, () => {});
+    expect(w.z[high]).toBeCloseTo(4 + RADII[0], 2);
+    expect(w.z[low]).toBeCloseTo(RADII[0], 2);
+    // pushed toward the edge until it goes over, it is never below the floor of any tile it is over
+    for (let f = 0; f < 600; f++) {
+      if (w.x[high] < face + 0.5) {
+        w.wake(high);
+        w.vx[high] = 12;
+      }
+      w.step(DT, () => {});
+      const under = w.x[high] < face ? 4 : 0;
+      expect(w.z[high], `frame ${f} at x ${w.x[high].toFixed(2)}`).toBeGreaterThan(under + RADII[0] - 0.05);
+    }
+    expect(w.x[high]).toBeGreaterThan(face);
+    expect(w.z[high]).toBeCloseTo(RADII[0], 2);
+  });
+
+  it('stops a body at a step face from below, and puts one from under an overhang back out the way it came', () => {
+    const face = GRID.originX + 30 * GRID.tile;
+    const floor = new Float32Array(GRID.cols * GRID.rows);
+    for (let ty = 0; ty < GRID.rows; ty++) for (let tx = 0; tx < 30; tx++) floor[ty * GRID.cols + tx] = 4;
+    const w = world({ floor, holes: [] });
+    const i = w.spawn(0, face + 8, 10, RADII[0]);
+    for (let f = 0; f < 240; f++) {
+      w.wake(i);
+      w.vx[i] = -8;
+      w.step(DT, () => {});
+      expect(w.z[i], `frame ${f}`).toBeLessThan(1);
+    }
+    expect(w.x[i]).toBeGreaterThanOrEqual(face + RADII[0] - 0.01);
+    expect(w.x[i]).toBeLessThan(face + 1);
+    // a box drags a body along the low floor into the face: it is shoved out sideways or held, never up onto the step
+    const j = w.spawn(0, face + 3, -10, RADII[0]);
+    let x = face + 6;
+    let prev: Pusher | null = null;
+    for (let f = 0; f < 120; f++) {
+      x -= 6 * DT;
+      const p: Pusher = {
+        x,
+        y: -10,
+        z: 1,
+        yaw: 0,
+        hx: 0.3,
+        hy: 4,
+        hz: 1,
+        vx: prev ? (x - prev.x) / DT : 0,
+        vy: 0,
+        spin: 0,
+        px: prev?.x ?? x,
+        py: -10,
+        owner: 0,
+      };
+      w.pushers = [p];
+      w.wakeNear(x, -10, 6);
+      w.step(DT, () => {});
+      prev = p;
+      expect(w.z[j], `frame ${f}`).toBeLessThan(2);
+      expect(w.x[j], `frame ${f}`).toBeGreaterThan(face - 0.01);
+    }
+  });
+
+  it('reports a body that falls below the bottom, with its kind and where, and frees its slot', () => {
+    // a floor that ends at a drop: the east third is a pit far below
+    const edge = GRID.originX + 40 * GRID.tile;
+    const floor = new Float32Array(GRID.cols * GRID.rows);
+    for (let ty = 0; ty < GRID.rows; ty++) for (let tx = 40; tx < GRID.cols; tx++) floor[ty * GRID.cols + tx] = -30;
+    const w = world({ floor, holes: [], bottom: -6 });
+    const i = w.spawn(1, edge - 3, 5, RADII[1]);
+    const fell: { kind: number; x: number; y: number; slot: number }[] = [];
+    for (let f = 0; f < 240; f++) {
+      if (w.alive[i] && w.x[i] < edge + 0.5) {
+        w.wake(i);
+        w.vx[i] = 10;
+      }
+      w.step(DT, (kind, x, y, slot) => fell.push({ kind, x, y, slot }));
+    }
+    expect(fell).toHaveLength(1);
+    expect(fell[0].kind).toBe(1);
+    expect(fell[0].slot).toBe(i);
+    expect(fell[0].x).toBeGreaterThan(edge);
+    expect(Math.abs(fell[0].y - 5)).toBeLessThan(1);
+    expect(w.live).toBe(0);
+    expect(w.spawn(0, -30, 10, 1)).toBe(i);
+  });
+
+  it('lets a body rest on the top of a box, lying flat, and carries it as the box moves', () => {
+    const w = world({ holes: [] });
+    const box = (x: number, vx: number, px: number): Pusher => ({
+      x,
+      y: 20,
+      z: 1,
+      yaw: 0,
+      hx: 6,
+      hy: 6,
+      hz: 1,
+      vx,
+      vy: 0,
+      spin: 0,
+      px,
+      py: 20,
+      owner: 0,
+    });
+    w.pushers = [box(0, 0, 0)];
+    const i = w.spawn(0, 0, 20, 6);
+    for (let f = 0; f < 180; f++) w.step(DT, () => {});
+    expect(w.z[i]).toBeCloseTo(2 + RADII[0], 1);
+    // flat: no tilt left about x or y
+    expect(Math.abs(w.q[i * 4])).toBeLessThan(0.05);
+    expect(Math.abs(w.q[i * 4 + 1])).toBeLessThan(0.05);
+    // asleep on the box, and the box moves off without anyone waking it: it goes along, not left in the air
+    expect(w.asleep[i]).toBe(1);
+    let x = 0;
+    for (let f = 0; f < 120; f++) {
+      const was = x;
+      x += 5 * DT;
+      w.pushers = [box(x, 5, was)];
+      w.step(DT, () => {});
+    }
+    expect(w.x[i]).toBeGreaterThan(x - 2);
+    expect(w.z[i]).toBeCloseTo(2 + RADII[0], 1);
+  });
+
+  it('wakes only within the height band it is given', () => {
+    const floor = new Float32Array(GRID.cols * GRID.rows);
+    for (let ty = 0; ty < GRID.rows; ty++) for (let tx = 0; tx < 30; tx++) floor[ty * GRID.cols + tx] = 4;
+    const w = world({ floor, holes: [] });
+    const face = GRID.originX + 30 * GRID.tile;
+    const up = w.spawn(0, face - 1, 10, 5),
+      down = w.spawn(0, face + 1, 10, 1);
+    for (let f = 0; f < 240; f++) w.step(DT, () => {});
+    expect(w.asleep[up]).toBe(1);
+    expect(w.asleep[down]).toBe(1);
+    w.wakeNear(face, 10, 4, 3, 6);
+    expect(w.asleep[up]).toBe(0);
+    expect(w.asleep[down]).toBe(1);
+  });
+
   it('holds a carried body still, and wakes the lot on request', () => {
     const w = world();
     const i = w.spawn(0, 10, 10, 6);

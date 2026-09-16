@@ -1,6 +1,6 @@
 {
   "name": "artshape-physics",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A world of spheres for a game with a great many small things rolling about a floor and being shoved: fixed-step, sleeping, hashed, and kept out of a grid of rock.",
   "license": "MIT",
   "type": "module",

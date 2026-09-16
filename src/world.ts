@@ -15,10 +15,17 @@
  * sleepers keep their place in a hash of their own from one step to the
  * next, and the pushers and belts find the sleepers under them through it.
  *
+ * The floor is the grid too: each tile has a height, flat at nothing unless
+ * the caller says, and a body rests on the tile under it. A tile whose floor
+ * stands above a body's middle is a wall to it, so a step is a wall from
+ * below and an edge from above, and what goes over the edge falls to the
+ * tile it lands on. Below the world's bottom a body has left it.
+ *
  * The world knows nothing of any game. It is handed a grid of solid tiles
- * to keep out of, the holes things fall out of it through, the radius of
- * each kind of body, where its chance comes from, and the tuning, with the
- * defaults being a coin-sized world; it says what fell in through a callback.
+ * to keep out of, the floor's heights, the holes things fall out of it
+ * through, the radius of each kind of body, where its chance comes from,
+ * and the tuning, with the defaults being a coin-sized world; it says what
+ * fell in, or out, through a callback.
  */
 
 /** The tile grid the world lies on: tiles `tile` across, `cols` by `rows` of them, from an origin. */
@@ -71,6 +78,14 @@ export interface WorldOptions {
   grid: Grid;
   /** Which tiles are rock, one byte a tile, row by row; the world reads it every step, so it may be rewritten in place. */
   solid: Uint8Array;
+  /**
+   * How high the floor stands on each tile, one a tile, row by row: flat at
+   * 0 if left out. A body rests on the tile under it; a tile whose floor is
+   * above a body's middle is a wall to it. Read every step, like the rock.
+   */
+  floor?: Float32Array;
+  /** Below this height a body has fallen out of the world: reported like one down a hole, and its slot freed. */
+  bottom?: number;
   /** The collision radius of each kind of body, by kind. */
   radii: readonly number[];
   holes?: readonly Hole[];
@@ -171,6 +186,10 @@ export class World {
   private readonly seenList: number[] = [];
   /** Which tiles are rock right now; whoever owns the grid rewrites it in place. */
   solid: Uint8Array;
+  /** How high the floor stands on each tile, or nothing for a flat floor at 0; the grid's owner may rewrite it. */
+  heights: Float32Array | null;
+  /** Below which a body has fallen out of the world. */
+  readonly bottom: number;
   readonly grid: Grid;
   readonly holes: readonly Hole[];
   private readonly radii: readonly number[];
@@ -208,6 +227,8 @@ export class World {
     const { capacity, grid, solid, radii } = options;
     this.capacity = capacity;
     this.solid = solid;
+    this.heights = options.floor ?? null;
+    this.bottom = options.bottom ?? -Infinity;
     this.grid = grid;
     this.holes = options.holes ?? [];
     this.radii = radii;
@@ -329,8 +350,8 @@ export class World {
     this.sz[i] = this.z[i];
   }
 
-  /** Wake everything within `radius` of a point — ahead of a blade, say. */
-  wakeNear(x: number, y: number, radius: number) {
+  /** Wake everything within `radius` of a point — ahead of a blade, say — and, if given, only between two heights. */
+  wakeNear(x: number, y: number, radius: number, z0 = -Infinity, z1 = Infinity) {
     // A sleeper is in the sleepers' hash where it lies, or it dozed off in
     // the last step and is still in the awake hash, a hair from where that
     // step hashed it, which the extra cell covers.
@@ -345,6 +366,7 @@ export class World {
       for (let cx = x0; cx <= x1; cx++) {
         for (let i = head[cy * gx + cx]; i >= 0; i = next[i]) {
           if (!this.alive[i] || !this.asleep[i]) continue;
+          if (this.z[i] < z0 || this.z[i] > z1) continue;
           const dx = this.x[i] - x,
             dy = this.y[i] - y;
           if (dx * dx + dy * dy < r2) this.wake(i);
@@ -680,19 +702,29 @@ export class World {
     }
   }
 
-  /** Whether the tile at a point is rock, or off the grid. */
-  private rockAt(px: number, py: number): boolean {
+  /** How high the floor stands under a point: the tile's height, or nothing off the grid or on a flat floor. */
+  floorAt(px: number, py: number): number {
+    if (!this.heights) return 0;
     const tx = Math.floor((px - this.grid.originX) / this.grid.tile),
       ty = Math.floor((py - this.grid.originY) / this.grid.tile);
-    return (
-      tx < 0 || ty < 0 || tx >= this.grid.cols || ty >= this.grid.rows || this.solid[ty * this.grid.cols + tx] === 1
-    );
+    if (tx < 0 || ty < 0 || tx >= this.grid.cols || ty >= this.grid.rows) return 0;
+    return this.heights[ty * this.grid.cols + tx];
+  }
+
+  /** Whether the tile at a point is a wall to a body whose middle is at `z`: rock, off the grid, or a floor above it. */
+  private wallAt(px: number, py: number, z: number): boolean {
+    const tx = Math.floor((px - this.grid.originX) / this.grid.tile),
+      ty = Math.floor((py - this.grid.originY) / this.grid.tile);
+    if (tx < 0 || ty < 0 || tx >= this.grid.cols || ty >= this.grid.rows) return true;
+    const t = ty * this.grid.cols + tx;
+    return this.solid[t] === 1 || (this.heights !== null && this.heights[t] > z);
   }
 
   /**
-   * The rock: the tiles around a body, as boxes it cannot enter.
+   * The rock, and the floor where it stands above a body: the tiles around
+   * a body, as boxes it cannot enter.
    *
-   * A body whose middle has got into a rock tile — shoved there by a blade,
+   * A body whose middle has got into a wall tile — shoved there by a blade,
    * or squeezed there out of a heap — goes back out the way it came in, not
    * out whichever face is nearest: past the middle of a tile the nearest face
    * is the far one, and a coin pushed into a wall a tile thick would come out
@@ -702,17 +734,18 @@ export class World {
    * the faces round it by its radius, as anything touching the rock is.
    */
   private walls(i: number) {
-    const { x, y, vx, vy, r, solid } = this;
-    if (this.rockAt(x[i], y[i])) {
+    const { x, y, z, vx, vy, r } = this;
+    const zi = z[i];
+    if (this.wallAt(x[i], y[i], zi)) {
       const bx = this.lastX[i],
         by = this.lastY[i];
-      if (!this.rockAt(bx, y[i])) {
+      if (!this.wallAt(bx, y[i], zi)) {
         x[i] = bx;
         vx[i] = 0;
-      } else if (!this.rockAt(x[i], by)) {
+      } else if (!this.wallAt(x[i], by, zi)) {
         y[i] = by;
         vy[i] = 0;
-      } else if (!this.rockAt(bx, by)) {
+      } else if (!this.wallAt(bx, by, zi)) {
         x[i] = bx;
         y[i] = by;
         vx[i] = vy[i] = 0;
@@ -730,9 +763,14 @@ export class World {
         if (!ox && !oy) continue;
         const nx = tx + ox,
           ny = ty + oy;
-        const rock =
-          nx < 0 || ny < 0 || nx >= this.grid.cols || ny >= this.grid.rows || solid[ny * this.grid.cols + nx];
-        if (!rock) continue;
+        if (
+          !this.wallAt(
+            this.grid.originX + (nx + 0.5) * this.grid.tile,
+            this.grid.originY + (ny + 0.5) * this.grid.tile,
+            zi,
+          )
+        )
+          continue;
         const x0 = this.grid.originX + nx * this.grid.tile,
           y0 = this.grid.originY + ny * this.grid.tile;
         const cx = Math.max(x0, Math.min(x0 + this.grid.tile, x[i])),
@@ -754,7 +792,7 @@ export class World {
     }
   }
 
-  /** A body buried in the rock with no way back: onto the nearest open floor, in rings out from where it is, and stopped. */
+  /** A body buried in the rock with no way back: onto the nearest open floor no higher than it, in rings out from where it is, and stopped. */
   private outOfRock(i: number) {
     const tx = Math.floor((this.x[i] - this.grid.originX) / this.grid.tile),
       ty = Math.floor((this.y[i] - this.grid.originY) / this.grid.tile);
@@ -766,8 +804,9 @@ export class World {
           if (Math.max(Math.abs(ox), Math.abs(oy)) !== ring) continue;
           const nx = tx + ox,
             ny = ty + oy;
-          if (nx < 0 || ny < 0 || nx >= this.grid.cols || ny >= this.grid.rows || this.solid[ny * this.grid.cols + nx])
-            continue;
+          if (nx < 0 || ny < 0 || nx >= this.grid.cols || ny >= this.grid.rows) continue;
+          const t = ny * this.grid.cols + nx;
+          if (this.solid[t] || (this.heights !== null && this.heights[t] > this.z[i])) continue;
           const d = ox * ox + oy * oy;
           if (d < bestD) {
             bestD = d;
@@ -800,7 +839,8 @@ export class World {
       ly = -s * dx + c * dy,
       lz = dz;
     const rad = r[i];
-    if (Math.abs(lx) > p.hx + rad || Math.abs(ly) > p.hy + rad || Math.abs(lz) > p.hz + rad) return;
+    // a hair of slack, so a body lying exactly on the box's top is still looked at
+    if (Math.abs(lx) > p.hx + rad + 0.1 || Math.abs(ly) > p.hy + rad + 0.1 || Math.abs(lz) > p.hz + rad + 0.1) return;
     const qx = Math.max(-p.hx, Math.min(p.hx, lx)),
       qy = Math.max(-p.hy, Math.min(p.hy, ly)),
       qz = Math.max(-p.hz, Math.min(p.hz, lz));
@@ -808,7 +848,11 @@ export class World {
       ny = ly - qy,
       nz = lz - qz;
     let d = Math.hypot(nx, ny, nz);
-    if (d >= rad) return;
+    if (d >= rad) {
+      // a sleeper lying on top of a box that has started to move is woken, or it would hang in the air as the box left
+      if (this.asleep[i] && d < rad + 0.1 && nz > 0.7 * d && (p.vx !== 0 || p.vy !== 0)) this.wake(i);
+      return;
+    }
     if (d < 1e-4) {
       // centre inside the box: leave by the nearest face, never downward
       const ex = p.hx - Math.abs(lx),
@@ -867,16 +911,18 @@ export class World {
       vy[i] += wny * j;
       vz[i] += wnz * j;
     }
-    // dragged along with the face a little, which is how a blade carries a load
+    // dragged along with the face a little, which is how a blade carries a load, and a platform what rests on it
     vx[i] += (pvx - vx[i]) * 0.15;
     vy[i] += (pvy - vy[i]) * 0.15;
     if (Math.abs(wnz) < 0.5) this.loadNow[p.owner] = (this.loadNow[p.owner] ?? 0) + 1;
+    // on top of the box is a floor: it lies flat there
+    else if (wnz > 0.5) this.onFloor[i] |= 2;
   }
 
   /** The magnet: a pull that grows toward the point, on things low enough to be on the floor. */
   private pull(i: number) {
     const m = this.magnet;
-    if (!m || this.z[i] > this.r[i] + 1.5) return;
+    if (!m || this.z[i] - this.floorAt(this.x[i], this.y[i]) > this.r[i] + 1.5) return;
     const dx = m.x - this.x[i],
       dy = m.y - this.y[i];
     const d = Math.hypot(dx, dy);
@@ -896,7 +942,8 @@ export class World {
       dy = y[i] - b.cy;
     const along = dx * b.dx + dy * b.dy,
       across = -dx * b.dy + dy * b.dx;
-    if (Math.abs(along) > b.half || Math.abs(across) > b.width / 2 || z[i] > r[i] + 0.6) return;
+    if (Math.abs(along) > b.half || Math.abs(across) > b.width / 2 || z[i] - this.floorAt(x[i], y[i]) > r[i] + 0.6)
+      return;
     if (this.asleep[i]) this.wake(i);
     const k = 0.12;
     vx[i] += (b.dx * b.speed - vx[i]) * k;
@@ -909,6 +956,12 @@ export class World {
   private floor(i: number, collect: (kind: number, x: number, y: number, i: number) => void) {
     const { x, y, z, vx, vy, vz, r } = this;
     const step = this.tune.step;
+    // out of the bottom of the world: gone, and reported
+    if (z[i] < this.bottom) {
+      collect(this.kind[i], x[i], y[i], i);
+      this.remove(i);
+      return;
+    }
     // the nearest hole, for the floor's slope toward it; and any it is over, which it falls into
     let near: Hole | null = null,
       nd = Infinity,
@@ -945,13 +998,14 @@ export class World {
         near = h;
       }
     }
-    if (z[i] < r[i]) {
-      z[i] = r[i];
+    const fz = this.floorAt(x[i], y[i]);
+    if (z[i] < fz + r[i]) {
+      z[i] = fz + r[i];
       if (vz[i] < 0) vz[i] = -vz[i] * this.tune.restitution;
       const drag = 1 / (1 + this.tune.floorDrag * step);
       vx[i] *= drag;
       vy[i] *= drag;
-      this.onFloor[i] = 1;
+      this.onFloor[i] |= 1;
       // a body near a rim tips in: the floor slopes to the hole a little
       if (near && nd < near.radius + 2.5) {
         vx[i] -= (ndx / nd) * 6 * step;
@@ -960,11 +1014,14 @@ export class World {
     }
   }
 
-  /** The cosmetic spin: flat when on the floor, tumbling when not. */
+  /** The cosmetic spin: flat when on the floor or a box, tumbling when not. */
   private turn(i: number) {
     const q = this.q,
       o = i * 4;
-    if (this.onFloor[i] && this.z[i] <= this.r[i] + 0.05) {
+    const resting =
+      (this.onFloor[i] & 1 && this.z[i] <= this.floorAt(this.x[i], this.y[i]) + this.r[i] + 0.05) ||
+      this.onFloor[i] & 2;
+    if (resting) {
       // ease to flat, whichever face is nearer up
       const zz = 1 - 2 * (q[o] * q[o] + q[o + 1] * q[o + 1]);
       const k = 0.12;
