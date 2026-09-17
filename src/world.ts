@@ -27,6 +27,7 @@
  * and the tuning, with the defaults being a coin-sized world; it says what
  * fell in, or out, through a callback.
  */
+import { Discs, SLOP } from './disc';
 
 /** The tile grid the world lies on: tiles `tile` across, `cols` by `rows` of them, from an origin. */
 export interface Grid {
@@ -59,7 +60,46 @@ export interface Tuning {
   sleepSteps: number;
   /** The spatial hash's cell, in world units: about the biggest body's diameter. */
   cell: number;
+  /** How the floor and the top of a box hold a disc against sliding: felt under a coin, which holds better than a coin does. */
+  grip: number;
 }
+
+/**
+ * How many times a step the discs' contacts with each other are gone over,
+ * and how far into anything a disc must have been found the first time for
+ * it and its neighbours to be gone over again. Put right by position a pass
+ * a step, a push runs on through a heap one contact a pass, and what is left
+ * over is coins a little into each other for good; a second pass halves it.
+ * Most of a bed is a hair into its neighbours and needs no second look, and
+ * going over only what was found well in costs a third less and rests a
+ * heap as well, measured over two dozen heaps. It goes by the disc and not
+ * by the pair, so a pair pushed into each other after its own turn in the
+ * first pass is still seen in the second, by whichever of them was deep.
+ */
+const DISC_PASSES = 2;
+const AGAIN = 0.02;
+/** How far under the floor a disc may still be, once put out of it, before it is put out of it again. */
+const LANDED = 0.02;
+/**
+ * How far into something a disc may be and still go to sleep: with the slop
+ * every resting contact keeps, a twentieth of a unit, and nothing asleep is
+ * further into anything. In a heap every push runs on through the coins it rests on, a
+ * contact a pass, and what is put right by position always lags the weight
+ * above by a little, steadily, however long it is left. Sleep is what ends
+ * it, since a sleeper is a wall and a push stops at a wall; so a disc that
+ * far in may sleep, and one further in is still being put right. With one
+ * pass a step a crowded heap lags by more than this and never sleeps, which
+ * is why there are two.
+ */
+const RESTING = 0.05 - SLOP;
+/**
+ * How far a disc's axis may have swung over a sleep window and still be at
+ * rest, as the square of the sine of it: eight degrees. Solved a pass a
+ * step, every resting coin is nudged a hundredth of a radian this way and
+ * that, and over a window that wanders to four degrees or so, going nowhere.
+ * A coin falling over swings ninety in the same time.
+ */
+const SWUNG = 0.0194;
 
 export const DEFAULT_TUNING: Tuning = {
   step: 1 / 120,
@@ -70,6 +110,7 @@ export const DEFAULT_TUNING: Tuning = {
   sleepDrift: 0.25,
   sleepSteps: 40,
   cell: 2.5,
+  grip: 0.7,
 };
 
 export interface WorldOptions {
@@ -88,6 +129,13 @@ export interface WorldOptions {
   bottom?: number;
   /** The collision radius of each kind of body, by kind. */
   radii: readonly number[];
+  /**
+   * How thick each kind is, top to bottom, for a kind that is a disc: a coin,
+   * with a turn of its own, that lies on a face, leans on another, or stands
+   * on its rim. A kind left out, or given nothing, is a ball, as thick as it
+   * is wide and with no turn worth keeping.
+   */
+  thickness?: readonly number[];
   holes?: readonly Hole[];
   /** Where chance comes from, for a spawned body's tilt: Math.random unless told otherwise. */
   random?: () => number;
@@ -152,7 +200,9 @@ export class World {
   readonly vy: Float32Array;
   readonly vz: Float32Array;
   readonly r: Float32Array;
-  /** Orientation, four floats a body, for drawing. */
+  /** How thick each body is, or nothing for a ball. */
+  readonly h: Float32Array;
+  /** Orientation, four floats a body: a disc's own, which its contacts turn; a ball's is for drawing. */
   readonly q: Float32Array;
   readonly wx: Float32Array;
   readonly wy: Float32Array;
@@ -161,10 +211,13 @@ export class World {
   /** Where each body was when this step started moving it, for the rock to put it back out the way it came in. */
   private readonly lastX: Float32Array;
   private readonly lastY: Float32Array;
-  /** Where each body was when the sleep window opened. */
+  /** Where each body was when the sleep window opened, and how a disc was turned. */
   private readonly sx: Float32Array;
   private readonly sy: Float32Array;
   private readonly sz: Float32Array;
+  private readonly so: Float32Array;
+  /** The step each body's window opened on. A body is judged on a whole window of its own, never on the tail of everyone's: one that appeared a step before a shared tick had moved nowhere yet, and slept where it appeared, in the air. */
+  private readonly opened: Int32Array;
   private steps = 0;
   /** Held by a drone: not stepped, still drawn where the drone puts it. */
   readonly carried: Uint8Array;
@@ -193,6 +246,13 @@ export class World {
   readonly grid: Grid;
   readonly holes: readonly Hole[];
   private readonly radii: readonly number[];
+  private readonly thickness: readonly number[];
+  /** The discs' side of things, if any kind is one. */
+  private readonly discs: Discs | null;
+  /** The floor's height under a point, as the discs ask for it: made once, so asking makes nothing. */
+  private readonly floorUnder = (px: number, py: number) => this.floorAt(px, py);
+  /** Which discs were found well into something in the first going over of a step, and so are gone over again. */
+  private again = new Uint8Array(0);
   private readonly maxRadius: number;
   private readonly tune: Tuning;
   private readonly random: () => number;
@@ -258,6 +318,35 @@ export class World {
     this.sz = new Float32Array(n);
     this.carried = new Uint8Array(n);
     this.onFloor = new Uint8Array(n);
+    this.h = new Float32Array(n);
+    this.so = new Float32Array(n * 4);
+    this.opened = new Int32Array(n);
+    this.again = new Uint8Array(n);
+    this.thickness = options.thickness ?? [];
+    this.discs = this.thickness.some((t) => t > 0)
+      ? new Discs(
+          {
+            x: this.x,
+            y: this.y,
+            z: this.z,
+            vx: this.vx,
+            vy: this.vy,
+            vz: this.vz,
+            q: this.q,
+            wx: this.wx,
+            wy: this.wy,
+            wz: this.wz,
+            r: this.r,
+            h: this.h,
+            onFloor: this.onFloor,
+            step: this.tune.step,
+            gravity: this.tune.gravity,
+            friction: this.tune.friction,
+            grip: this.tune.grip,
+          },
+          n,
+        )
+      : null;
     this.gx = Math.ceil((grid.cols * grid.tile) / this.tune.cell) + 2;
     this.gy = Math.ceil((grid.rows * grid.tile) / this.tune.cell) + 2;
     this.head = new Int32Array(this.gx * this.gy).fill(-1);
@@ -303,9 +392,49 @@ export class World {
     this.sx[i] = x;
     this.sy[i] = y;
     this.sz[i] = z;
+    this.h[i] = this.thickness[kind] ?? 0;
+    this.discs?.born(i);
+    this.window(i);
     this.list(i);
     this.live++;
     return i;
+  }
+
+  /** A body turned as told, still: a coin put down flat, or stood on its rim, rather than dropped. */
+  setOrientation(i: number, qx: number, qy: number, qz: number, qw: number) {
+    const o = i * 4;
+    this.q[o] = qx;
+    this.q[o + 1] = qy;
+    this.q[o + 2] = qz;
+    this.q[o + 3] = qw;
+    this.normalise(i);
+    this.wx[i] = this.wy[i] = this.wz[i] = 0;
+    this.discs?.rest(i);
+    this.window(i);
+  }
+
+  /** The way a body's own z looks: a disc's axis, square to its faces. */
+  axis(i: number): [number, number, number] {
+    const q = this.q,
+      o = i * 4;
+    return [
+      2 * (q[o] * q[o + 2] + q[o + 3] * q[o + 1]),
+      2 * (q[o + 1] * q[o + 2] - q[o + 3] * q[o]),
+      1 - 2 * (q[o] * q[o] + q[o + 1] * q[o + 1]),
+    ];
+  }
+
+  /** The sleep window opened afresh on a body: where it is, and how it is turned. */
+  private window(i: number) {
+    this.opened[i] = this.steps;
+    this.sx[i] = this.x[i];
+    this.sy[i] = this.y[i];
+    this.sz[i] = this.z[i];
+    const o = i * 4;
+    this.so[o] = this.q[o];
+    this.so[o + 1] = this.q[o + 1];
+    this.so[o + 2] = this.q[o + 2];
+    this.so[o + 3] = this.q[o + 3];
   }
 
   /** Take a body out of the world for good. */
@@ -341,13 +470,13 @@ export class World {
     if (this.asleep[i]) {
       this.lastX[i] = this.x[i];
       this.lastY[i] = this.y[i];
+      // a disc's step starts from here: what moves it now is the whole of how far it gets
+      if (this.h[i] > 0) this.discs!.rouse(i);
     }
     this.asleep[i] = 0;
     this.list(i);
     // a fresh window, so what woke it has time to move it
-    this.sx[i] = this.x[i];
-    this.sy[i] = this.y[i];
-    this.sz[i] = this.z[i];
+    this.window(i);
   }
 
   /** Wake everything within `radius` of a point — ahead of a blade, say — and, if given, only between two heights. */
@@ -397,23 +526,37 @@ export class World {
 
   private substep(collect: (kind: number, x: number, y: number, i: number) => void) {
     const { x, y, z, vx, vy, vz, alive, asleep, carried, awake } = this;
-    const window = ++this.steps % this.tune.sleepSteps === 0;
+    this.steps++;
     this.loadNow.length = 0;
+    this.discs?.tick();
     this.settle();
     // integrate
     for (let k = 0, n = this.awakeCount; k < n; k++) {
       const i = awake[k];
       if (carried[i]) continue;
-      vz[i] -= this.tune.gravity * this.tune.step;
       this.lastX[i] = x[i];
       this.lastY[i] = y[i];
+      if (this.h[i] > 0) {
+        // a disc moves on and turns, and what it touches is put right by position after
+        this.discs!.begin(i);
+        this.onFloor[i] = 0;
+        continue;
+      }
+      vz[i] -= this.tune.gravity * this.tune.step;
       x[i] += vx[i] * this.tune.step;
       y[i] += vy[i] * this.tune.step;
       z[i] += vz[i] * this.tune.step;
       this.onFloor[i] = 0;
     }
     this.hash();
-    this.pairs();
+    if (this.discs) this.again.fill(0, 0, this.count);
+    this.pairs(false);
+    // the discs found well into something are gone over again, put back on the floor first
+    for (let pass = 1; pass < DISC_PASSES; pass++)
+      if (this.discs) {
+        this.floors();
+        this.pairs(true);
+      }
     this.place();
     this.sleepers();
     const seen = this.seen;
@@ -424,6 +567,11 @@ export class World {
       // one a blade or belt has already moved this step is kept out of the rock, and no more
       if (seen[i]) {
         this.walls(i);
+        if (this.h[i] > 0) this.discs!.finish(i);
+        continue;
+      }
+      if (this.h[i] > 0) {
+        this.stepDisc(i, collect);
         continue;
       }
       this.push(i);
@@ -443,7 +591,7 @@ export class World {
         vy[i] *= 0.96;
         vz[i] *= 0.96;
       }
-      if (window) {
+      if (this.steps - this.opened[i] >= this.tune.sleepSteps) {
         const dx = x[i] - this.sx[i],
           dy = y[i] - this.sy[i],
           dz = z[i] - this.sz[i];
@@ -452,9 +600,7 @@ export class World {
           vx[i] = vy[i] = vz[i] = 0;
           this.wx[i] = this.wy[i] = this.wz[i] = 0;
         }
-        this.sx[i] = x[i];
-        this.sy[i] = y[i];
-        this.sz[i] = z[i];
+        this.window(i);
       }
       this.turn(i);
     }
@@ -530,7 +676,9 @@ export class World {
       visit(b.cx - ex, b.cy - ey, b.cx + ex, b.cy + ey, (i) => this.beltOne(i, b));
     }
     for (const o of this.placed) {
-      visit(o.bx - o.reach, o.by - o.reach, o.bx + o.reach, o.by + o.reach, (i) => this.pushOne(i, o));
+      visit(o.bx - o.reach, o.by - o.reach, o.bx + o.reach, o.by + o.reach, (i) =>
+        this.h[i] > 0 ? this.discBox(i, o) : this.pushOne(i, o),
+      );
     }
   }
 
@@ -592,7 +740,7 @@ export class World {
     }
   }
 
-  private pairs() {
+  private pairs(discsOnly: boolean) {
     const { x, y, z, vx, vy, vz, r, alive, asleep, carried, head, next, gx, awake } = this;
     // a sleeper woken here goes on the end of the list and waits for the next step to be the outer body
     for (let k = 0, n = this.awakeCount; k < n; k++) {
@@ -612,6 +760,12 @@ export class World {
             // an awake pair is done once, from the lower index; a sleeper is
             // never the outer body, so it is done from the awake one
             if (j === i || (!asleep[j] && j < i)) continue;
+            // a disc, or a ball against one, is the discs' business
+            if (this.h[i] > 0 || this.h[j] > 0) {
+              if (!discsOnly || this.again[i] || this.again[j]) this.discPair(i, j);
+              continue;
+            }
+            if (discsOnly) continue;
             const dx = x[j] - x[i],
               dy = y[j] - y[i],
               dz = z[j] - z[i];
@@ -711,6 +865,337 @@ export class World {
     return this.heights[ty * this.grid.cols + tx];
   }
 
+  /**
+   * An awake body and another, one of them a disc at least. A sleeper is a
+   * wall to a lean and is woken by a knock, by being sunk into, or by what it
+   * lies on moving off; a ball pushed is slowed along the push, since nothing
+   * else reads its speed back from where it got to.
+   */
+  private discPair(i: number, j: number) {
+    const d = this.discs!;
+    if (!d.pair(i, j)) return;
+    if (d.deepest > AGAIN) this.again[i] = this.again[j] = 1;
+    let frozen = -1;
+    if (this.asleep[j]) {
+      // the way from the awake one to the sleeper, to see whether the sleeper lies on it
+      const up = d.from === i ? d.wayZ : -d.wayZ;
+      const moving = this.vx[i] * this.vx[i] + this.vy[i] * this.vy[i] + this.vz[i] * this.vz[i] > 0.04;
+      if (d.closing < -1.2 || d.deepest > 0.08 || (up > 0.5 && moving)) this.wake(j);
+      else frozen = j;
+    }
+    const ball = this.h[i] > 0 ? (this.h[j] > 0 ? -1 : j) : i;
+    const s = d.from === ball ? -1 : 1;
+    const wx = d.wayX * s,
+      wy = d.wayY * s,
+      wz = d.wayZ * s;
+    d.solve(frozen);
+    if (ball >= 0 && ball !== frozen) {
+      // the way from the disc to the ball: the ball's speed into the disc along it is taken off
+      const other = ball === i ? j : i;
+      const vn =
+        (this.vx[ball] - this.vx[other]) * wx +
+        (this.vy[ball] - this.vy[other]) * wy +
+        (this.vz[ball] - this.vz[other]) * wz;
+      if (vn < 0) {
+        this.vx[ball] -= wx * vn;
+        this.vy[ball] -= wy * vn;
+        this.vz[ball] -= wz * vn;
+      }
+      if (wz > 0.5) this.onFloor[ball] |= 1;
+    }
+  }
+
+  /**
+   * A disc's step, after the pairs: the boxes, the rock and the floor put it
+   * right by position, its speed and spin are read back from how far it
+   * got, and if it has not got far, nor turned far, it sleeps.
+   */
+  private stepDisc(i: number, collect: (kind: number, x: number, y: number, i: number) => void) {
+    const d = this.discs!;
+    for (const o of this.placed) this.discBox(i, o);
+    // the rock moves it like any contact: put out of it, and no faster for having been put
+    const wasX = this.x[i],
+      wasY = this.y[i];
+    this.walls(i);
+    if (this.x[i] !== wasX || this.y[i] !== wasY) d.put(i, this.x[i] - wasX, this.y[i] - wasY, 0);
+    if (!this.discFloor(i, collect)) return;
+    d.finish(i);
+    this.belt(i);
+    this.pull(i);
+    const { x, y, z, vx, vy, vz, wx, wy, wz, q, so } = this;
+    if (vx[i] * vx[i] + vy[i] * vy[i] + vz[i] * vz[i] < 1.5) {
+      vx[i] *= 0.96;
+      vy[i] *= 0.96;
+      vz[i] *= 0.96;
+      wx[i] *= 0.96;
+      wy[i] *= 0.96;
+      wz[i] *= 0.96;
+    }
+    if (this.steps - this.opened[i] < this.tune.sleepSteps) return;
+    const dx = x[i] - this.sx[i],
+      dy = y[i] - this.sy[i],
+      dz = z[i] - this.sz[i];
+    // how far its axis has swung since the window opened. A turn about its own axis is no move at all: a disc is
+    // the same disc all the way round, and one jostled by its neighbours turns that way a little for ever.
+    const o = i * 4;
+    const thenX = 2 * (so[o] * so[o + 2] + so[o + 3] * so[o + 1]),
+      thenY = 2 * (so[o + 1] * so[o + 2] - so[o + 3] * so[o]),
+      thenZ = 1 - 2 * (so[o] * so[o] + so[o + 1] * so[o + 1]);
+    const nowX = 2 * (q[o] * q[o + 2] + q[o + 3] * q[o + 1]),
+      nowY = 2 * (q[o + 1] * q[o + 2] - q[o + 3] * q[o]),
+      nowZ = 1 - 2 * (q[o] * q[o] + q[o + 1] * q[o + 1]);
+    const same = thenX * nowX + thenY * nowY + thenZ * nowZ;
+    // not far, its axis not swung by more than a couple of degrees, and not still being put out of something: at rest
+    if (
+      dx * dx + dy * dy + dz * dz < this.tune.sleepDrift * this.tune.sleepDrift &&
+      1 - same * same < SWUNG &&
+      d.into[i] < RESTING &&
+      this.deepestOf(i) < RESTING + SLOP
+    ) {
+      this.asleep[i] = 1;
+      vx[i] = vy[i] = vz[i] = 0;
+      wx[i] = wy[i] = wz[i] = 0;
+      d.doze(i);
+    }
+    this.window(i);
+  }
+
+  /**
+   * The floor under every disc that is to be gone over again, between one
+   * going over of their contacts and the next. A coin leaning in a heap stands on the floor by
+   * its rim and bears what lies on it; pushed down through the floor by the
+   * first going over and put back only when the step ends, it is never seen
+   * by the second to be standing on anything, so what lies on it is never
+   * lifted off it, and a shingle of leaning coins stays a tenth of a unit
+   * into itself for good. They are only put back on the floor here: the
+   * floor's friction is for the end of the step.
+   */
+  private floors() {
+    const d = this.discs!;
+    const { awake, alive, asleep, carried, h } = this;
+    for (let k = 0, n = this.awakeCount; k < n; k++) {
+      const i = awake[k];
+      if (!alive[i] || asleep[i] || carried[i] || h[i] === 0 || !this.again[i]) continue;
+      if (d.plane(i, 0, 0, 0, 0, 0, 1, 0, 0, this.floorUnder)) d.solve(-1, false);
+    }
+  }
+
+  /**
+   * How far a disc is into anything round it as it stands, at the deepest:
+   * looked at once more before it sleeps. How far in it was found this step
+   * is how far in it was when its turn came, and a neighbour shoved after
+   * that can leave it deeper in a sleeper than anything noted; asleep, the
+   * two would stay so.
+   */
+  private deepestOf(i: number): number {
+    const d = this.discs!;
+    const { head, next, gx, alive, carried } = this;
+    const c = this.cellOf(this.x[i], this.y[i]);
+    const cx = c % gx,
+      cy = (c / gx) | 0;
+    let deepest = 0;
+    for (let oy = -1; oy <= 1; oy++) {
+      const ny = cy + oy;
+      if (ny < 0 || ny >= this.gy) continue;
+      for (let ox = -1; ox <= 1; ox++) {
+        const nx = cx + ox;
+        if (nx < 0 || nx >= gx) continue;
+        for (let j = head[ny * gx + nx]; j >= 0; j = next[j]) {
+          if (j === i || !alive[j] || carried[j]) continue;
+          if (d.pair(i, j) && d.deepest > deepest) deepest = d.deepest;
+        }
+      }
+    }
+    return deepest;
+  }
+
+  /** The floor under a disc, and the bottom and the holes it may leave the world by: whether it is still in it. */
+  private discFloor(i: number, collect: (kind: number, x: number, y: number, i: number) => void): boolean {
+    const { x, y, z } = this;
+    if (z[i] < this.bottom) {
+      collect(this.kind[i], x[i], y[i], i);
+      this.remove(i);
+      return false;
+    }
+    for (const hole of this.holes) {
+      if (Math.hypot(x[i] - hole.x, y[i] - hole.y) >= hole.radius) continue;
+      // over the hole there is no floor, and at the bottom of it the disc is collected
+      if (z[i] < -hole.depth + 3) {
+        collect(this.kind[i], x[i], y[i], i);
+        this.remove(i);
+        return false;
+      }
+      return true;
+    }
+    const d = this.discs!;
+    if (d.plane(i, 0, 0, 0, 0, 0, 1, 0, 0, this.floorUnder)) {
+      d.solve(-1);
+      // A coin landing hard at a tilt is put out of the floor a point of its rim at a time, and each push turns
+      // it and dips another: gone over once, it ended the step a sixteenth of a unit under. So it is looked at
+      // again, and if it is still well in, put out again, which halves what is left each time.
+      for (let more = 0; more < 2 && d.plane(i, 0, 0, 0, 0, 0, 1, 0, 0, this.floorUnder) && d.deepest > LANDED; more++)
+        d.solve(-1, false);
+    }
+    if (this.heights) this.lips(i);
+    return true;
+  }
+
+  /**
+   * The lips of the floor round a disc: where the tile under its middle and
+   * the one next to it stand at different heights, the top edge of the
+   * higher is a lip, and a disc near enough its height meets it. A disc is
+   * narrower than two tiles, so the four tiles beside its own are all there
+   * are; where two lips meet at a corner each is taken to run on.
+   */
+  private lips(i: number) {
+    const d = this.discs!;
+    const { grid, heights, solid } = this;
+    const { x, y, z } = this;
+    const tx = Math.floor((x[i] - grid.originX) / grid.tile),
+      ty = Math.floor((y[i] - grid.originY) / grid.tile);
+    if (tx < 0 || ty < 0 || tx >= grid.cols || ty >= grid.rows) return;
+    const t = ty * grid.cols + tx;
+    const own = heights![t],
+      bound = d.bound[i];
+    for (let k = 0; k < 4; k++) {
+      const ox = k === 0 ? 1 : k === 1 ? -1 : 0,
+        oy = k === 2 ? 1 : k === 3 ? -1 : 0;
+      const ux = tx + ox,
+        uy = ty + oy;
+      if (ux < 0 || uy < 0 || ux >= grid.cols || uy >= grid.rows) continue;
+      const u = uy * grid.cols + ux;
+      if (solid[u] === 1 || heights![u] === own) continue;
+      const top = Math.max(own, heights![u]);
+      if (z[i] - bound >= top || z[i] + bound <= top) continue;
+      // the edge the two tiles share, and the way from the higher of them to the lower
+      const ex = grid.originX + (tx + (ox > 0 ? 1 : 0)) * grid.tile,
+        ey = grid.originY + (ty + (oy > 0 ? 1 : 0)) * grid.tile;
+      const down = heights![u] < own ? 1 : -1;
+      if (Math.abs(ox ? x[i] - ex : y[i] - ey) >= bound) continue;
+      if (d.lip(i, ex, ey, top, oy ? 1 : 0, ox ? 1 : 0, ox * down, oy * down)) d.solve(-1);
+    }
+  }
+
+  /**
+   * A box against a disc: the face of the box nearest the disc's middle is
+   * the plane it meets, or the edge or corner if that is nearer, and the
+   * disc's rim is put out of it. The box is not moved. A sleeper lying on a
+   * box that starts to move is woken, or it would hang in the air.
+   */
+  private discBox(i: number, o: Placed) {
+    const d = this.discs!;
+    const { p, bx, by, pivotX, pivotY, c, s } = o;
+    const dx = this.x[i] - bx,
+      dy = this.y[i] - by;
+    if (Math.abs(dx) > o.reach || Math.abs(dy) > o.reach) return;
+    const lx = c * dx + s * dy,
+      ly = -s * dx + c * dy,
+      lz = this.z[i] - p.z;
+    const reach = d.bound[i] + 0.1;
+    if (Math.abs(lx) > p.hx + reach || Math.abs(ly) > p.hy + reach || Math.abs(lz) > p.hz + reach) return;
+    // the nearest of the box to the disc's middle, and the way from it to the middle
+    let qx = Math.max(-p.hx, Math.min(p.hx, lx)),
+      qy = Math.max(-p.hy, Math.min(p.hy, ly)),
+      qz = Math.max(-p.hz, Math.min(p.hz, lz));
+    let fx = lx - qx,
+      fy = ly - qy,
+      fz = lz - qz;
+    const gap = Math.hypot(fx, fy, fz);
+    if (gap > 1e-4) {
+      fx /= gap;
+      fy /= gap;
+      fz /= gap;
+    } else {
+      // the middle is inside the box: out by the nearest face, never downward
+      const ex = p.hx - Math.abs(lx),
+        ey = p.hy - Math.abs(ly),
+        ez = p.hz - lz;
+      fx = fy = fz = 0;
+      if (ex <= ey && ex <= ez) {
+        fx = Math.sign(lx) || 1;
+        qx = fx * p.hx;
+      } else if (ey <= ez) {
+        fy = Math.sign(ly) || 1;
+        qy = fy * p.hy;
+      } else {
+        fz = 1;
+        qz = p.hz;
+      }
+    }
+    // the box's speed where the disc is: its own, plus the turn
+    const ox = this.x[i] - pivotX,
+      oy = this.y[i] - pivotY;
+    const pvx = p.vx - p.spin * oy,
+      pvy = p.vy + p.spin * ox;
+    const found = d.plane(
+      i,
+      bx + c * qx - s * qy,
+      by + s * qx + c * qy,
+      p.z + qz,
+      c * fx - s * fy,
+      s * fx + c * fy,
+      fz,
+      pvx,
+      pvy,
+      null,
+      this.asleep[i] ? 0.05 : 0,
+    );
+    if (!found) return;
+    if (this.asleep[i]) {
+      // sunk into, or lying on a box that has started to move: woken; else left be
+      if (d.deepest > 0.02 || (fz > 0.7 && (p.vx !== 0 || p.vy !== 0))) this.wake(i);
+      else return;
+    }
+    d.solve(-1);
+    if (Math.abs(fz) < 0.5 && d.deepest > 0) this.loadNow[p.owner] = (this.loadNow[p.owner] ?? 0) + 1;
+  }
+
+  /**
+   * The deepest any two bodies are into each other as they stand, and which
+   * two: for a test, or a game's rule, that nothing cuts. `resting` looks
+   * only at pairs both asleep: what is being shoved may be a little into
+   * what shoves it, for a step or two, and what has come to rest may not.
+   */
+  deepest(resting = false): { depth: number; i: number; j: number } {
+    const cells = new Map<number, number[]>();
+    for (let i = 0; i < this.count; i++) {
+      if (!this.alive[i]) continue;
+      const c = this.cellOf(this.x[i], this.y[i]);
+      const list = cells.get(c);
+      if (list) list.push(i);
+      else cells.set(c, [i]);
+    }
+    const best = { depth: 0, i: -1, j: -1 };
+    for (const [c, list] of cells) {
+      const cx = c % this.gx,
+        cy = (c / this.gx) | 0;
+      for (let oy = -1; oy <= 1; oy++) {
+        for (let ox = -1; ox <= 1; ox++) {
+          const nx = cx + ox,
+            ny = cy + oy;
+          if (nx < 0 || ny < 0 || nx >= this.gx || ny >= this.gy) continue;
+          const others = cells.get(ny * this.gx + nx);
+          if (!others) continue;
+          for (const i of list) {
+            for (const j of others) {
+              if (j <= i || (resting && !(this.asleep[i] && this.asleep[j]))) continue;
+              let depth: number;
+              if (this.discs && (this.h[i] > 0 || this.h[j] > 0))
+                depth = this.discs.pair(i, j) ? this.discs.deepest : 0;
+              else
+                depth =
+                  this.r[i] +
+                  this.r[j] -
+                  Math.hypot(this.x[j] - this.x[i], this.y[j] - this.y[i], this.z[j] - this.z[i]);
+              if (depth > best.depth) Object.assign(best, { depth, i, j });
+            }
+          }
+        }
+      }
+    }
+    return best;
+  }
+
   /** Whether the tile at a point is a wall to a body whose middle is at `z`: rock, off the grid, or a floor above it. */
   private wallAt(px: number, py: number, z: number): boolean {
     const tx = Math.floor((px - this.grid.originX) / this.grid.tile),
@@ -735,7 +1220,11 @@ export class World {
    */
   private walls(i: number) {
     const { x, y, z, vx, vy, r } = this;
-    const zi = z[i];
+    // A disc lies with its middle an eighth of a unit above the floor, and one landing, or pressed down by a pile,
+    // can end a step's pushes with its middle under the floor it lies on, to be put back on it next: taken as it
+    // stands, its own floor is rock to it, and it is put out of it sideways. So a disc is no lower to the rock than
+    // it was when the step began.
+    const zi = this.discs && this.h[i] > 0 ? Math.max(z[i], this.discs.pz[i]) : z[i];
     if (this.wallAt(x[i], y[i], zi)) {
       const bx = this.lastX[i],
         by = this.lastY[i];

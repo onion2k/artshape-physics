@@ -1,7 +1,7 @@
 {
   "name": "artshape-physics",
-  "version": "0.2.0",
-  "description": "A world of spheres for a game with a great many small things rolling about a floor and being shoved: fixed-step, sleeping, hashed, and kept out of a grid of rock.",
+  "version": "0.3.0",
+  "description": "A world of spheres and coins for a game with a great many small things rolling about a floor, piling on it and being shoved: fixed-step, sleeping, hashed, and kept out of a grid of rock.",
   "license": "MIT",
   "type": "module",
   "exports": {
