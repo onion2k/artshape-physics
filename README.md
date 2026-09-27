@@ -43,7 +43,10 @@ tiles, and what falls into a hole is reported through a callback.
   point.
 - **The rock** is a grid of solid tiles the caller owns and may rewrite in
   place. A body shoved into a tile goes back out the way it came in, not out
-  the nearest face, so nothing is pushed through a wall a tile thick.
+  the nearest face, so nothing is pushed through a wall a tile thick. A ball
+  bounces off the rock, and off a floor standing above it, by the tuning's
+  `wallRestitution`; off the floor by its `restitution`; and each kind's
+  `bounce` scales every restitution it meets. A disc does not bounce.
 - **The floor has heights**, one a tile, flat unless the caller gives them.
   A body rests on the tile under it; a tile whose floor stands above a body's
   middle is a wall to it, so a step is a wall from below and an edge from
@@ -81,6 +84,8 @@ const world = new World({
   floor: heights, // one height a tile, for tiers and steps; left out, the floor is flat
   bottom: -6, // below which a body has fallen out of the world
   holes: [{ x: 0, y: 0, radius: 5.5, depth: 14 }],
+  bounce: [1, 0.6], // how bouncy each kind is, scaling every restitution it meets; left out, 1
+  tuning: { wallRestitution: 0.8, bounceFrom: 2 }, // off a wall by 0.8, and nothing met slower than 2 u/s bounces
 });
 
 const coin = world.spawn(0, 12, -8, 3); // a kind, where, and how high; awake
@@ -113,9 +118,11 @@ while pushers churn a heap; nothing is shoved into or through the rock; a
 belt carries and a magnet pulls; a body rests on the tile under it, falls
 from a high tile to a low one, is stopped by a step from below, and is
 reported when it falls out of the bottom; one on a box's top lies flat and
-is carried; chance from a seed gives the same world twice.
+is carried; a ball bounces off a wall, the floor and another by their
+figures times its kind's bounce, and a coin never does; chance from a seed
+gives the same world twice.
 
-Five scenes, run from seeds, hold the world bit for bit to how v0.3.0 stepped
+Six scenes, run from seeds, hold the world bit for bit to how v0.3.0 stepped
 it, so a game that has not asked for anything new gets nothing new. The
 bench holds a frame's cost in a scene for each game that uses the package: a
 heap churned, a bed of coins pushed, and a golf ball shot round a course,

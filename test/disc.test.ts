@@ -626,4 +626,42 @@ describe('a disc', () => {
     // settled only below a speed it never goes under is not settled at all
     expect(slide({ settleBelow: 0 })).toBe(unsettled);
   });
+
+  it('never bounces: coins pushed into the rock go as they always have, whatever the bounce of their kind or the wall', () => {
+    // A bed of coins against the border's rock, which starts at x 19, and a box driving it harder into it. A coin's
+    // speed is read back from where it got, but within the step its solver reads the speed of the coins it touches,
+    // so a bed pressed against the rock is where a figure the rock gave a coin would show.
+    const into = (over: Partial<WorldOptions>) => {
+      const w = world({ ...over, tuning: { cell: 1.2, ...over.tuning } });
+      for (let gx = 0; gx < 5; gx++) for (let gy = 0; gy < 8; gy++) flat(w, 18.5 - gx * 0.86, -3 + gy * 0.86, H / 2);
+      run(w, 0.5);
+      let x = 12;
+      let prev: Pusher | null = null;
+      for (let f = 0; f < 150; f++) {
+        x += 3 * DT;
+        const p: Pusher = {
+          x,
+          y: 0,
+          z: 0.5,
+          yaw: 0,
+          hx: 0.3,
+          hy: 5,
+          hz: 0.5,
+          vx: prev ? (x - prev.x) / DT : 0,
+          vy: 0,
+          spin: 0,
+          px: prev?.x ?? x,
+          py: 0,
+          owner: 0,
+        };
+        w.pushers = [p];
+        w.wakeNear(x + 1, 0, 6);
+        w.step(DT, () => {});
+        prev = p;
+      }
+      return [...w.x, ...w.y, ...w.z, ...w.vx, ...w.vy, ...w.q];
+    };
+    const plain = into({});
+    expect(into({ bounce: [2, 1], tuning: { wallRestitution: 0.8, bounceFrom: 3, restitution: 0.9 } })).toEqual(plain);
+  });
 });

@@ -204,7 +204,8 @@ This is a tool. It lands first so that everything after it is measured.
 
 **What:**
 
-- **The unchanged gate.** `test/unchanged.test.ts` runs five scenes from
+- **The unchanged gate.** `test/unchanged.test.ts` runs five scenes (six
+  from commit 5's time, when coins driven into the rock were added) from
   fixed seeds, with no new option set (as built: the spec had four, and a
   fifth was needed for coins in a hole, which no other scene reached):
   - a heap of 900 balls churned by two sweepers beside a hole, topped up as
@@ -368,20 +369,28 @@ for this.
 - `wallRestitution` sets how rock and step faces bounce.
 - The kind's `bounce` multiplies every restitution the kind meets: walls,
   the floor, and ball against ball.
-- `bounceFrom` stops slow touches from bouncing, so a bouncy ball can still
-  come to rest on the floor. Gravity alone adds 0.58 u/s a step, and with a
-  floor restitution of 0.6 that would bounce the ball a little every step.
+- `bounceFrom` stops slow touches from bouncing. (As built: the reason
+  first given, that a bouncy ball could not otherwise come to rest on the
+  floor, was wrong. Gravity draws a ball into the floor at 0.58 u/s a step,
+  and bounced back at less than that it stays on it, and sleep ends what
+  hopping there is. Where it matters is a restitution of one or more, as a
+  bumper's or a bouncy kind's on a bouncy floor: a ball rolling at 20 u/s on
+  a floor it meets at 1.08 skims it, undragged, and rolls 35.4 units to a
+  dead floor's 23.8; with `bounceFrom: 2` it rolls 23.8.)
 
 **Acceptance:**
 
 1. With `wallRestitution: 0.8`, a ball at 20 u/s square on to rock leaves
    at 16 ± 0.3. (Ooergolf finds its border stops the ball nearly dead now;
-   the figure is the game's to tune.) At 45° it leaves at 45° ± 1°. It fails today, when it
-   leaves at 2.0.
+   the figure is the game's to tune.) At 45° it keeps its speed along the
+   wall and leaves with 0.8 of its speed across it; at a restitution of 1 it
+   leaves at 45° ± 1°. (As built: this said 45° at 0.8, which is only so at
+   1.) It fails today, when it leaves at 2.0.
 2. A kind with `bounce: 0.5` against the same wall leaves at 8 ± 0.3.
 3. Dropped from 6 u onto the floor with `restitution: 0.6`, a ball of
-   `bounce` 1 bounces higher than one of 0.5. With `bounceFrom: 2`, both
-   come to rest and sleep within 3 s.
+   `bounce` 1 rises about 2 u, and one of 0.5 a quarter as high. A ball
+   rolling on a floor it meets at more than 1 rolls as on a dead floor with
+   `bounceFrom: 2`, and skims it without.
 4. The same holds at a raised floor tile's face, which is a wall and uses
    the same figure.
 5. The unchanged gate is still green.
@@ -396,7 +405,12 @@ for this.
 
 **Discs:** discs never bounce. They are solved by position, and `bounce`
 does not apply to them. This is tested: a disc kind given `bounce: 2`
-behaves bit for bit as with 1.
+behaves bit for bit as with 1. (As built: v0.3.0 gave a disc's speed into
+the rock the same tenth over as a ball's, and nothing ever read it, since a
+disc's speed is read back from where it got when its step ends. The rock
+now leaves a disc's speed alone, and a sixth scene of the unchanged gate,
+recorded from v0.3.0's own source, shows coins against the rock step bit
+for bit as they did.)
 
 **Performance:** one multiply per contact. The bench should show nothing.
 

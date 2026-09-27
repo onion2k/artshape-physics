@@ -62,7 +62,20 @@ export interface Tuning {
   /** The fixed step, in seconds. */
   step: number;
   gravity: number;
+  /** How much of its speed into the floor a ball keeps, going back up; and two balls that meet faster than 1.5 u/s. */
   restitution: number;
+  /** How much of its speed into a wall a ball keeps, going back out: rock, the grid's edge, a floor standing above it. */
+  wallRestitution: number;
+  /**
+   * The least speed into the floor or a wall that bounces; slower, a ball
+   * just stops going into it. Gravity draws a ball on the floor into it at
+   * 0.58 u/s a step, and bounced back at less than that it stays on the
+   * floor; but met at a restitution of one or more, a floor or a bumper sends
+   * it back faster than it came, and a ball pressed against it every step,
+   * by gravity or a belt, is pumped off it a hair at a time. A rolling ball
+   * skims the floor, and nothing drags it while it is off it.
+   */
+  bounceFrom: number;
   friction: number;
   /** How hard the floor slows what rolls on it. */
   floorDrag: number;
@@ -129,6 +142,8 @@ export const DEFAULT_TUNING: Tuning = {
   step: 1 / 120,
   gravity: 70,
   restitution: 0.08,
+  wallRestitution: 0.1,
+  bounceFrom: 0,
   friction: 0.45,
   floorDrag: 5.5,
   sleepDrift: 0.25,
@@ -162,6 +177,13 @@ export interface WorldOptions {
    * is wide and with no turn worth keeping.
    */
   thickness?: readonly number[];
+  /**
+   * How bouncy each kind is, by kind: every restitution a ball of the kind
+   * meets, the floor's, a wall's and another ball's, is multiplied by it. A
+   * kind left out bounces by 1, as every kind did before there was this. A
+   * disc does not bounce, and its kind's bounce is not read.
+   */
+  bounce?: readonly number[];
   holes?: readonly Hole[];
   /** Where chance comes from, for a spawned body's tilt: Math.random unless told otherwise. */
   random?: () => number;
@@ -272,6 +294,8 @@ export class World {
   readonly grid: Grid;
   readonly holes: readonly Hole[];
   private readonly radii: readonly number[];
+  /** How bouncy each kind is: 1 for a kind not given one. */
+  private readonly kindBounce: readonly number[];
   private readonly thickness: readonly number[];
   /** The discs' side of things, if any kind is one. */
   private readonly discs: Discs | null;
@@ -318,6 +342,7 @@ export class World {
     this.grid = grid;
     this.holes = options.holes ?? [];
     this.radii = radii;
+    this.kindBounce = radii.map((_, k) => options.bounce?.[k] ?? 1);
     this.maxRadius = Math.max(...radii);
     this.tune = { ...DEFAULT_TUNING, ...options.tuning };
     // called each time, not captured, so a caller who swaps Math.random out later is heard
@@ -858,7 +883,8 @@ export class World {
             z[j] += nzz * fix * wj;
             if (vn < 0) {
               // a slow touch does not bounce at all
-              const jn = -(1 + (vn < -1.5 ? this.tune.restitution : 0)) * vn;
+              const e = this.tune.restitution * ((this.kindBounce[this.kind[i]] + this.kindBounce[this.kind[j]]) / 2);
+              const jn = -(1 + (vn < -1.5 ? e : 0)) * vn;
               vx[i] -= nxx * jn * wi;
               vy[i] -= nyy * jn * wi;
               vz[i] -= nzz * jn * wi;
@@ -1318,10 +1344,14 @@ export class World {
         dy /= d;
         x[i] += dx * (rad - d);
         y[i] += dy * (rad - d);
+        // A disc is only put out of the rock. Its speed is read back from how far it got when its step ends, and
+        // nothing reads it before then, so nothing given it here would last; and a disc does not bounce.
+        if (this.h[i] > 0) continue;
         const vn = vx[i] * dx + vy[i] * dy;
         if (vn < 0) {
-          vx[i] -= dx * vn * 1.1;
-          vy[i] -= dy * vn * 1.1;
+          const e = vn < -this.tune.bounceFrom ? this.tune.wallRestitution * this.kindBounce[this.kind[i]] : 0;
+          vx[i] -= dx * vn * (1 + e);
+          vy[i] -= dy * vn * (1 + e);
         }
       }
     }
@@ -1538,7 +1568,8 @@ export class World {
     const fz = this.floorAt(x[i], y[i]);
     if (z[i] < fz + r[i]) {
       z[i] = fz + r[i];
-      if (vz[i] < 0) vz[i] = -vz[i] * this.tune.restitution;
+      if (vz[i] < -this.tune.bounceFrom) vz[i] = -vz[i] * this.tune.restitution * this.kindBounce[this.kind[i]];
+      else if (vz[i] < 0) vz[i] = 0;
       const drag = 1 / (1 + this.tune.floorDrag * step);
       vx[i] *= drag;
       vy[i] *= drag;

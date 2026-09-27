@@ -50,7 +50,7 @@ The gates, one by one:
   `switch-exhaustiveness-check` and `no-unnecessary-condition`. It is for
   mistakes, not style.
 - **Tests:** `vitest run`. Every behaviour the README claims has a test.
-- **Unchanged:** `test/unchanged.test.ts`, among the tests. Five scenes run
+- **Unchanged:** `test/unchanged.test.ts`, among the tests. Six scenes run
   from seeds with no new option set, every body's state hashed at frames
   60, 300 and 600, and held bit for bit to `test/unchanged.json`, written at
   v0.3.0. It is what says a game that has not opted in behaves exactly as

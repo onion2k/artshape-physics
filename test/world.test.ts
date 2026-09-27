@@ -592,4 +592,103 @@ describe('the world', () => {
     expect(before).toBeGreaterThan(0.55);
     expect(w.vx[i]).toBe(0);
   });
+
+  /** A ball sent at a wall, at 20 u/s unless told: how fast it leaves it, across the wall and along it. */
+  const offWall = (over: Partial<WorldOptions>, kind = 0, angle = 0, x = 20, speed = 20) => {
+    const w = world({ holes: [], solid: solid((tx) => tx === 40), ...over, tuning: { floorDrag: 0, ...over.tuning } });
+    const i = w.spawn(kind, x, 0, RADII[kind], speed * Math.cos(angle), speed * Math.sin(angle), 0);
+    for (let f = 0; f < 60 && w.vx[i] > 0; f++) w.step(DT, () => {});
+    return { across: -w.vx[i], along: w.vy[i] };
+  };
+
+  it('bounces a ball off the rock by the wall restitution, keeping its speed along the wall', () => {
+    expect(DEFAULT_TUNING.wallRestitution).toBe(0.1);
+    expect(offWall({}).across).toBeCloseTo(2, 1);
+    expect(offWall({ tuning: { wallRestitution: 0.8 } }).across).toBeCloseTo(16, 0);
+    const slant = offWall({ tuning: { wallRestitution: 0.8 } }, 0, Math.PI / 4);
+    expect(slant.across).toBeCloseTo(0.8 * 20 * Math.SQRT1_2, 0);
+    expect(slant.along).toBeCloseTo(20 * Math.SQRT1_2, 1);
+    // at a restitution of one, the angle it leaves at is the angle it came in at
+    const mirror = offWall({ tuning: { wallRestitution: 1 } }, 0, Math.PI / 4);
+    expect((Math.atan2(mirror.along, mirror.across) * 180) / Math.PI).toBeCloseTo(45, 0);
+  });
+
+  it("bounces a kind by the wall's figure times its own bounce", () => {
+    const tuning = { wallRestitution: 0.8 };
+    expect(offWall({ tuning, bounce: [0.5, 1] }).across).toBeCloseTo(8, 0);
+    expect(offWall({ tuning, bounce: [0.5, 1] }, 1).across).toBeCloseTo(16, 0);
+  });
+
+  it('bounces off the face of a raised floor tile, and off the edge of the grid, as off rock', () => {
+    const floor = new Float32Array(GRID.cols * GRID.rows);
+    for (let ty = 0; ty < GRID.rows; ty++) for (let tx = 40; tx < GRID.cols; tx++) floor[ty * GRID.cols + tx] = 4;
+    const tuning = { wallRestitution: 0.8 };
+    expect(offWall({ tuning, solid: solid(), floor }).across).toBeCloseTo(16, 0);
+    // no border of rock: past the last column is off the grid, which is a wall too
+    const open = new Uint8Array(GRID.cols * GRID.rows);
+    expect(offWall({ tuning, solid: open }, 0, 0, GRID.originX + GRID.cols * GRID.tile - 10).across).toBeCloseTo(16, 0);
+  });
+
+  it("bounces off the floor by the restitution times the kind's bounce", () => {
+    const drop = (bounce: number) => {
+      const w = world({ holes: [], radii: [0.42, 0.42], bounce: [bounce, 1], tuning: { restitution: 0.6 } });
+      const i = w.spawn(0, -30, 10, 6);
+      let landed = false,
+        high = 0;
+      for (let f = 0; f < 180; f++) {
+        w.step(DT, () => {});
+        if (w.z[i] < RADII[0] + 0.05) landed = true;
+        else if (landed) high = Math.max(high, w.z[i]);
+      }
+      return high - RADII[0];
+    };
+    // From 6 up the ball lands at 28 u/s, and at 0.6 leaves at 16.8, which carries it 2 up. At half the bounce it
+    // leaves at half the speed, and rises a quarter as high.
+    const bouncy = drop(1),
+      dull = drop(0.5);
+    expect(bouncy).toBeGreaterThan(1.8);
+    expect(bouncy).toBeLessThan(2.1);
+    expect(dull / bouncy).toBeCloseTo(0.25, 1);
+  });
+
+  it('keeps a ball rolling on a floor it bounces off harder than it met it on the floor, given bounceFrom', () => {
+    // Gravity draws a rolling ball into the floor at 0.58 u/s a step. Bounced back faster than that, it skims a
+    // hair above the floor, where nothing drags it, and rolls half as far again. Below bounceFrom it only stops.
+    const roll = (bounce: number, bounceFrom: number) => {
+      const w = world({
+        holes: [],
+        radii: [1, 1],
+        bounce: [bounce, 1],
+        tuning: { restitution: 0.9, floorDrag: 0.8, bounceFrom },
+      });
+      const i = w.spawn(0, -80, 10, 1, 20, 0, 0);
+      for (let f = 0; f < 300; f++) w.step(DT, () => {});
+      return w.x[i] + 80;
+    };
+    expect(DEFAULT_TUNING.bounceFrom).toBe(0);
+    const dead = roll(0, 0);
+    expect(roll(1.2, 0)).toBeGreaterThan(dead + 5);
+    expect(roll(1.2, 2)).toBeCloseTo(dead, 1);
+  });
+
+  it('bounces two balls apart by the restitution times the mean of their bounce, as fast as they met', () => {
+    const w = world({ holes: [], radii: [1, 1], bounce: [1, 0.5], tuning: { floorDrag: 0, restitution: 0.5 } });
+    const a = w.spawn(0, -20, 0, 1, 10, 0, 0),
+      b = w.spawn(1, -10, 0, 1, -10, 0, 0);
+    for (let f = 0; f < 60 && w.vx[b] - w.vx[a] < 0; f++) w.step(DT, () => {});
+    // met at 20, parted at a half of three quarters of that
+    expect(w.vx[b] - w.vx[a]).toBeCloseTo(0.5 * 0.75 * 20, 0);
+  });
+
+  it('stops a ball against a wall that it meets slower than bounceFrom, and bounces one that meets it faster', () => {
+    const tuning = { wallRestitution: 0.8, bounceFrom: 2 };
+    expect(offWall({ tuning }, 0, 0, 29, 1.5).across).toBeCloseTo(0, 6);
+    expect(offWall({ tuning }, 0, 0, 29, 3).across).toBeCloseTo(2.4, 1);
+  });
+
+  it('bounces as before where nothing is said: a kind with no bounce given is a kind of bounce 1', () => {
+    const tuning = { wallRestitution: 0.8 };
+    expect(offWall({ tuning, bounce: [] })).toEqual(offWall({ tuning }));
+    expect(offWall({ tuning, bounce: [1, 1] })).toEqual(offWall({ tuning }));
+  });
 });
