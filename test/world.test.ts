@@ -760,4 +760,78 @@ describe('the world', () => {
     expect(w.asleep[i]).toBe(1);
     expect(w.z[i]).toBeCloseTo(2 + RADII[0], 1);
   });
+
+  /** A world whose floor is flat but for one strip of tiles, two tiles wide from column 40 (x 30 to 36), at a height. */
+  const strip = (height: number, over: Partial<WorldOptions> = {}) => {
+    const floor = new Float32Array(GRID.cols * GRID.rows);
+    for (let ty = 0; ty < GRID.rows; ty++) for (let tx = 40; tx < 42; tx++) floor[ty * GRID.cols + tx] = height;
+    return world({ holes: [], floor, radii: [1, 1], ...over, tuning: { floorDrag: 0, ...over.tuning } });
+  };
+  const STRIP = GRID.originX + 40 * GRID.tile;
+
+  it('makes a floor tile standing a radius or more above a rolling ball a wall to it, and climbs a lower one at any speed', () => {
+    const roll = (height: number, speed: number) => {
+      const w = strip(height);
+      const i = w.spawn(0, STRIP - 3, 0, 1, speed, 0, 0);
+      let highest = 0;
+      for (let f = 0; f < 400; f++) {
+        w.step(DT, () => {});
+        highest = Math.max(highest, w.z[i]);
+      }
+      return { x: w.x[i], highest };
+    };
+    for (const speed of [2, 5, 20]) {
+      for (const height of [1, 1.5]) expect(roll(height, speed).x, `${height} high at ${speed}`).toBeLessThan(STRIP);
+      // lower than its radius, it is set on the top of the tile and rolls on over it
+      for (const height of [0.5, 0.9]) {
+        const { x, highest } = roll(height, speed);
+        expect(x, `${height} high at ${speed}`).toBeGreaterThan(STRIP + 6);
+        expect(highest).toBeCloseTo(height + 1, 2);
+      }
+    }
+  });
+
+  it('lets a ball in flight clear a wall below its bottom, sets one on the top of a wall between its bottom and middle, and bounces one off a wall above its middle', () => {
+    const fly = (z: number) => {
+      const w = strip(2);
+      const i = w.spawn(0, STRIP - 1.2, 0, z, 40, 0, 0);
+      // whether it went up at any step while it was over the wall
+      let rose = false,
+        was = z;
+      for (let f = 0; f < 60; f++) {
+        w.step(DT, () => {});
+        if (w.z[i] > was + 1e-6 && w.x[i] > STRIP - 1 && w.x[i] < STRIP + 7) rose = true;
+        was = w.z[i];
+      }
+      return { x: w.x[i], rose };
+    };
+    // its bottom above the top: over it, falling all the way
+    expect(fly(3.5).rose).toBe(false);
+    expect(fly(3.5).x).toBeGreaterThan(STRIP + 6);
+    // its middle above the top and its bottom not: put up onto it, and on over it
+    expect(fly(2.6).rose).toBe(true);
+    expect(fly(2.6).x).toBeGreaterThan(STRIP + 6);
+    // its middle below the top: a wall
+    expect(fly(1.8).x).toBeLessThan(STRIP);
+  });
+
+  it('takes a ball that rolls onto water, a floor far below the bottom, and reports it out of the bottom over the water; one thrown over it lands beyond', () => {
+    const water = () => strip(-30, { bottom: -6 });
+    const w = water();
+    const rolled = w.spawn(0, STRIP - 3, 0, 1, 10, 0, 0);
+    const fell: { hole: number; x: number; slot: number }[] = [];
+    for (let f = 0; f < 120; f++) w.step(DT, (_kind, x, _y, slot, hole) => fell.push({ hole, x, slot }));
+    expect(fell).toHaveLength(1);
+    expect(fell[0].slot).toBe(rolled);
+    expect(fell[0].hole).toBe(BOTTOM);
+    expect(fell[0].x).toBeGreaterThan(STRIP);
+    expect(fell[0].x).toBeLessThan(STRIP + 6);
+    // from the bank, up and over the six units of water
+    const v = water();
+    const thrown = v.spawn(0, STRIP - 1, 0, 1);
+    v.hit(thrown, 25, 0, 15);
+    for (let f = 0; f < 120; f++) v.step(DT, () => expect.fail('it clears the water'));
+    expect(v.x[thrown]).toBeGreaterThan(STRIP + 6);
+    expect(v.z[thrown]).toBeCloseTo(1, 2);
+  });
 });

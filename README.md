@@ -55,6 +55,17 @@ tiles, and what falls into a hole is reported through a callback.
   is what a sliding platform is. Below the world's **bottom** a body has
   fallen out of it, and is reported like one down a hole, as down none:
   `BOTTOM`.
+
+  So a low wall, one a ball in flight can clear, is a tile of floor standing
+  at the wall's height. To a ball rolling beside it, one standing its radius
+  or more above the floor is a wall, and bounces it off; one lower is
+  climbed at any speed, the ball set on its top. A ball in flight with its
+  bottom above the top goes over; with its middle above and its bottom not,
+  it is set on the top; with its middle below, it bounces off. Water, or any
+  hazard that takes a ball, is a tile of floor far below the bottom: what
+  rolls onto it falls and is reported as `BOTTOM`, over the water, and what
+  is thrown over it lands beyond. Rock stays as tall as the world.
+
 - **Holes** are where bodies leave the world: as many as the caller gives it,
   each with a rim the floor slopes toward, a wall to the pit, and a depth at
   which what fell is reported, with which hole it went down, and its slot

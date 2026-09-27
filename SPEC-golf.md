@@ -450,7 +450,10 @@ from off the course by its own tiles at that x and y. Rock stays infinitely
 tall, as the outer bound of a course. See open questions 2 and 3.
 
 **Acceptance** (these hold today apart from the bounce figure, so each is
-mutation-checked rather than seen failing):
+mutation-checked rather than seen failing; as built, a tile standing the
+ball's radius exactly is a wall, since gravity sinks the ball a hair each
+step before the rock is looked at, and one at nine tenths of it is climbed,
+at 2, 5 and 20 u/s):
 
 1. A ball rolling at 20 u/s into a raised tile of height ≥ its radius
    bounces off by `wallRestitution`.
