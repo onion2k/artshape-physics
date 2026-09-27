@@ -67,6 +67,23 @@
       "awake": 13
     }
   },
+  "coins and balls driven into the rock and a corner of it": {
+    "60": {
+      "hash": "0ead4e0c",
+      "live": 116,
+      "awake": 23
+    },
+    "300": {
+      "hash": "ac0abb4f",
+      "live": 116,
+      "awake": 115
+    },
+    "600": {
+      "hash": "98d17f70",
+      "live": 116,
+      "awake": 51
+    }
+  },
   "coins pushed down a hole on a flat floor": {
     "60": {
       "hash": "8a4d0a3a",

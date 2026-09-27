@@ -5,13 +5,15 @@
  * opts in to something new, and a test of what a thing does only holds it
  * to within its tolerance: a bounce that moved by a thousandth, or a heap
  * that settled a step later, would pass every other test here and still
- * change a game. So five scenes that between them go down every path the
+ * change a game. So six scenes that between them go down every path the
  * world has — a heap churned beside a hole, balls shoved into a wall a tile
  * thick and thrown at it, balls on tiers with a belt, a magnet and a box
- * that carries, a bed of coins pushed over a step and a drop, and coins
- * pushed down a hole — are run from a seed, with none of the new options,
- * and every body's state is hashed as they go. The hashes were written
- * once, at v0.3.0, before anything changed. Each path a later change is to
+ * that carries, a bed of coins pushed over a step and a drop, coins and
+ * balls driven into the rock, and coins pushed down a hole — are run from a
+ * seed, with none of the new options, and every body's state is hashed as
+ * they go. The hashes were written by v0.3.0's own source: the first five
+ * before anything changed, and the sixth later, from a copy of it, when it
+ * was found that no scene drove a coin into the rock. Each path a later change is to
  * touch was checked by changing it by a part in ten million and seeing a
  * scene fail.
  *
@@ -349,6 +351,56 @@ const SCENES: Scene[] = [
           world.pushers = [p];
           world.wakeNear(x + 1.5, 0, 9);
           prev = p;
+          return DT;
+        },
+      };
+    },
+  },
+  {
+    // Coins, and some balls among them, driven into the rock and into a corner of it: the rock against a disc, and
+    // against a ball among discs, which the coins falling off the front of the other bed never reach.
+    name: 'coins and balls driven into the rock and a corner of it',
+    build() {
+      const grid: Grid = { cols: 40, rows: 40, originX: -20, originY: -20, tile: 1 };
+      const R = 0.42,
+        H = 0.24;
+      const random = seeded(13);
+      const world = new World({
+        capacity: 200,
+        grid,
+        // the border, and a wall standing out from it toward the middle, so the bed is driven into a corner
+        solid: border(grid, (tx, ty) => ty === 25 && tx >= 30),
+        radii: [R, R],
+        thickness: [H, 0],
+        random,
+        tuning: { cell: 1.2 },
+      });
+      for (let gx = 0; gx < 8; gx++)
+        for (let gy = 0; gy < 12; gy++) {
+          const k = (gx * 12 + gy) % 9 === 4 ? 1 : 0;
+          const i = world.spawn(k, 18.4 - gx * 0.86 + random() * 0.03, -2 + gy * 0.86 + random() * 0.03, k ? R : H / 2);
+          if (!k) world.setOrientation(i, 0, 0, 0, 1);
+        }
+      for (let k = 0; k < 20; k++) world.spawn(0, 12 + random() * 6, -2 + random() * 9, 1 + random() * 2);
+      let x = 6;
+      let prev: Pusher | null = null;
+      return {
+        world,
+        frame(f) {
+          if (f >= 30) x += (f < 330 ? 2.5 : -3) * DT;
+          const p = slider(x, 2.5, prev, { z: 0.5, hx: 0.3, hy: 6, hz: 0.5, yaw: 0.1 });
+          world.pushers = [p];
+          world.wakeNear(x + 1.5, 2.5, 8);
+          prev = p;
+          // now and then a coin or a ball in the bed is sent at the rock, as v0.3.0 would send it
+          if (f % 50 === 10) {
+            const i = (f * 7) % world.count;
+            if (world.alive[i]) {
+              world.wake(i);
+              world.vx[i] = 9;
+              world.vy[i] = 4;
+            }
+          }
           return DT;
         },
       };
