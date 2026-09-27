@@ -62,8 +62,11 @@ tiles, and what falls into a hole is reported through a callback.
   the body is gone once it passes the bottom, and reported as the hole's.
 - **Chance** comes from a function the caller hands in, and the **tuning** —
   gravity, friction, restitution, drag, the settling of what is slow, the
-  sleep window, the hash cell — is a record with a coin-sized world as its
-  defaults.
+  sleep window, whether a body may sleep in the air, the hash cell — is a
+  record with a coin-sized world as its defaults. Sleep goes by how far a
+  body has got over a window of steps, and one bouncing can be back where it
+  was by the window's end; with `sleepInAir` off, a body sleeps only once it
+  lies on something.
 
 ## Using it
 

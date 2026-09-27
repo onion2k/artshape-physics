@@ -664,4 +664,68 @@ describe('a disc', () => {
     const plain = into({});
     expect(into({ bounce: [2, 1], tuning: { wallRestitution: 0.8, bounceFrom: 3, restitution: 0.9 } })).toEqual(plain);
   });
+
+  it('with sleepInAir off, lies, stacks and leans at rest and sleeps, and a heap settles as with it on', () => {
+    const off = (over: Partial<WorldOptions> = {}) => world({ ...over, tuning: { cell: 1.2, sleepInAir: false } });
+    const w = off();
+    const a = flat(w, 0, 0, H / 2);
+    run(w, 1);
+    const b = flat(w, 0.05, 0, 2);
+    // leaning at twenty degrees on a third's edge, as the leaning test puts it
+    const c = flat(w, 5, 0, H / 2);
+    const th = (20 * Math.PI) / 180,
+      foot = R + (H / Math.sin(th)) * Math.cos(th);
+    const d = w.spawn(
+      DISC,
+      5 + foot - R * Math.cos(th) + (H / 2) * Math.sin(th),
+      0,
+      R * Math.sin(th) + (H / 2) * Math.cos(th),
+    );
+    w.setOrientation(d, 0, Math.sin(th / 2), 0, Math.cos(th / 2));
+    run(w, 4);
+    for (const i of [a, b, c, d]) expect(w.asleep[i], `coin ${i}`).toBe(1);
+    expect(tilt(w, d)).toBeGreaterThan(th - 0.06);
+    for (const seed of [1, 2, 3]) {
+      const heap = (sleepInAir: boolean) => {
+        const random = seeded(seed);
+        const h = world({ capacity: 200, random, tuning: { cell: 1.2, sleepInAir } });
+        for (let k = 0; k < 150; k++) {
+          const r = Math.sqrt(random()) * 2,
+            t = random() * Math.PI * 2;
+          h.spawn(DISC, Math.cos(t) * r, Math.sin(t) * r, 0.5 + random() * 4);
+        }
+        run(h, 5);
+        let awake = 0;
+        for (let i = 0; i < h.count; i++) if (!h.asleep[i]) awake++;
+        return awake;
+      };
+      expect(heap(false), `seed ${seed}`).toBe(heap(true));
+    }
+  });
+
+  it('tossed so that it is in the air when its sleep window closes, hangs there, unless sleepInAir is off', () => {
+    // put down flat, which opens its window; tossed up ten steps before the window closes at forty
+    const toss = (sleepInAir: boolean) => {
+      const w = world({ tuning: { cell: 1.2, sleepInAir } });
+      const i = flat(w, 0, 0, H / 2);
+      let slept = -1;
+      for (let s = 0; s < 240; s++) {
+        if (s === 30) w.vz[i] = 5;
+        w.step(1 / 120, () => {});
+        if (slept < 0 && w.asleep[i]) slept = w.z[i];
+      }
+      return slept;
+    };
+    expect(toss(true)).toBeGreaterThan(H / 2 + 0.1);
+    expect(toss(false)).toBeCloseTo(H / 2, 1);
+  });
+
+  it('with sleepInAir off, lets a ball lying on a coin rest there and sleep', () => {
+    const w = world({ tuning: { cell: 1.2, sleepInAir: false } });
+    flat(w, 0, 0, H / 2);
+    const ball = w.spawn(BALL, 0, 0, H + R + 0.2);
+    run(w, 3);
+    expect(w.asleep[ball]).toBe(1);
+    expect(w.z[ball]).toBeCloseTo(H + R, 1);
+  });
 });

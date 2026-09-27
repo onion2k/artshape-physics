@@ -144,7 +144,9 @@ applies:
 - **Asleep:** the thing meets a sleeper, a sleeper lies against it or on
   it, it wakes what it should and only that, and a body can come to rest
   against it and sleep. Nothing new costs anything for a sleeper that is
-  not touched.
+  not touched. A thing that can hold a body up marks it `BORNE` when it
+  touches it below its middle, or with `sleepInAir` off a body resting on
+  it never sleeps.
 - **Carried:** a body with `carried[i]` set is not stepped, and nothing new
   moves it or reports it.
 - **Discs as well as spheres:** every path has a disc branch, or says why it

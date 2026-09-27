@@ -691,4 +691,73 @@ describe('the world', () => {
     expect(offWall({ tuning, bounce: [] })).toEqual(offWall({ tuning }));
     expect(offWall({ tuning, bounce: [1, 1] })).toEqual(offWall({ tuning }));
   });
+
+  it('with sleepInAir off, never leaves a bouncing ball asleep in the air, and lets every one rest on the floor', () => {
+    // dropped from a spread of heights onto a floor it bounces off at 0.6: a ball back at the height its sleep window
+    // opened at, by the time it closes, has gone no distance by the window's reckoning
+    const drops = (sleepInAir: boolean) => {
+      let hung = 0,
+        resting = 0;
+      for (let k = 0; k < 20; k++) {
+        const w = world({ holes: [], tuning: { restitution: 0.6, sleepInAir } });
+        const i = w.spawn(0, -30, 10, 3 + k * 0.17);
+        for (let f = 0; f < 600; f++) w.step(DT, () => {});
+        if (w.asleep[i] && w.z[i] > RADII[0] + 0.01) hung++;
+        if (w.asleep[i] && Math.abs(w.z[i] - RADII[0]) < 0.01) resting++;
+      }
+      return { hung, resting };
+    };
+    expect(DEFAULT_TUNING.sleepInAir).toBe(true);
+    // as it always was, some hang
+    expect(drops(true).hung).toBeGreaterThan(0);
+    expect(drops(false)).toEqual({ hung: 0, resting: 20 });
+  });
+
+  it('with sleepInAir off, settles a heap as it does with it on, a big ball nested among small ones too', () => {
+    // A big ball among small ones is held up by contacts none of which is under it by the floor's reckoning, which
+    // wants one within sixty degrees of straight down; held to that, it never slept. Anything below its middle
+    // holds it up.
+    for (const seed of [1, 2, 3]) {
+      const heap = (sleepInAir: boolean) => {
+        const random = seeded(seed);
+        const w = world({ capacity: 400, holes: [], random, tuning: { sleepInAir } });
+        for (let k = 0; k < 300; k++) {
+          const r = Math.sqrt(random()) * 5,
+            a = random() * Math.PI * 2;
+          w.spawn(k % 10 ? 0 : 1, Math.cos(a) * r, Math.sin(a) * r, 1 + random() * 6);
+        }
+        for (let f = 0; f < 600; f++) w.step(DT, () => {});
+        let awake = 0;
+        for (let i = 0; i < w.count; i++) if (!w.asleep[i]) awake++;
+        return awake;
+      };
+      const on = heap(true);
+      expect(on).toBeLessThan(10);
+      expect(heap(false), `seed ${seed}`).toBe(on);
+    }
+  });
+
+  it('with sleepInAir off, lets a ball on the top of a box rest there and sleep, and carries it', () => {
+    const w = world({ holes: [], tuning: { sleepInAir: false } });
+    const box: Pusher = {
+      x: 0,
+      y: 20,
+      z: 1,
+      yaw: 0,
+      hx: 6,
+      hy: 6,
+      hz: 1,
+      vx: 0,
+      vy: 0,
+      spin: 0,
+      px: 0,
+      py: 20,
+      owner: 0,
+    };
+    w.pushers = [box];
+    const i = w.spawn(0, 0, 20, 6);
+    for (let f = 0; f < 180; f++) w.step(DT, () => {});
+    expect(w.asleep[i]).toBe(1);
+    expect(w.z[i]).toBeCloseTo(2 + RADII[0], 1);
+  });
 });

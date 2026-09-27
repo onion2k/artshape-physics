@@ -66,6 +66,13 @@ const PARALLEL = 0.9962;
 /** How far two things may sink into each other before they are pushed apart: it keeps a resting contact a contact. */
 export const SLOP = 0.004;
 /**
+ * A body's mark, beside the floor's 1 and a moving box's 2, for having
+ * touched anything below its middle this step, however steeply: what holds
+ * up a ball in a nest of smaller ones, none of which is under it by the
+ * reckoning of the other two. A body held to it sleeps only where it lies.
+ */
+export const BORNE = 4;
+/**
  * How much a rim pushes up or down as well as across, by how far the two
  * are out of level: a coin's rim is rounded, and under a shove the higher
  * of two rides up over the lower, which is how a bed buckles into a pile.
@@ -1712,6 +1719,8 @@ export class Discs {
       // which is on which, for whoever wants to know what is resting
       if (nz < -0.5) onFloor[a] |= b < 0 && (this.vb[o] !== 0 || this.vb[o + 1] !== 0) ? 2 : 1;
       else if (nz > 0.5 && b >= 0) onFloor[b] |= 1;
+      if (nz < 0) onFloor[a] |= BORNE;
+      else if (nz > 0 && b >= 0) onFloor[b] |= BORNE;
 
       if (!slides) continue;
       // the slide between the two spots since the step began, across the way between them

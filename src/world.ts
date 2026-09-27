@@ -27,7 +27,7 @@
  * and the tuning, with the defaults being a coin-sized world; it says what
  * fell in, or out, through a callback.
  */
-import { Discs, SLOP } from './disc';
+import { BORNE, Discs, SLOP } from './disc';
 
 /** The tile grid the world lies on: tiles `tile` across, `cols` by `rows` of them, from an origin. */
 export interface Grid {
@@ -99,6 +99,16 @@ export interface Tuning {
    */
   settle: number;
   settleBelow: number;
+  /**
+   * Whether a body may go to sleep with nothing under it. Sleep is judged by
+   * how far a body is from where it was a window of steps before, and a ball
+   * bouncing on the floor can be back at that height by then: let, it sleeps
+   * in the air and hangs there, as seven drops in twenty did at a restitution
+   * of 0.6. Held to having touched something below its middle in the step it
+   * would sleep, it sleeps only where it lies. True, the default, is how it
+   * always was: held to it, some bodies in a heap sleep a window later.
+   */
+  sleepInAir: boolean;
 }
 
 /**
@@ -152,6 +162,7 @@ export const DEFAULT_TUNING: Tuning = {
   grip: 0.7,
   settle: 0.96,
   settleBelow: 1.5,
+  sleepInAir: true,
 };
 
 export interface WorldOptions {
@@ -663,7 +674,10 @@ export class World {
         const dx = x[i] - this.sx[i],
           dy = y[i] - this.sy[i],
           dz = z[i] - this.sz[i];
-        if (dx * dx + dy * dy + dz * dz < this.tune.sleepDrift * this.tune.sleepDrift) {
+        if (
+          dx * dx + dy * dy + dz * dz < this.tune.sleepDrift * this.tune.sleepDrift &&
+          (this.tune.sleepInAir || this.onFloor[i] & BORNE)
+        ) {
           asleep[i] = 1;
           vx[i] = vy[i] = vz[i] = 0;
           this.wx[i] = this.wy[i] = this.wz[i] = 0;
@@ -864,7 +878,7 @@ export class World {
                 }
                 vx[i] *= 0.98;
                 vy[i] *= 0.98;
-                this.onFloor[i] |= nzz < -0.5 ? 1 : 0;
+                this.onFloor[i] |= (nzz < -0.5 ? 1 : 0) | (nzz < 0 ? BORNE : 0);
                 continue;
               }
             }
@@ -919,6 +933,8 @@ export class World {
             }
             if (nzz < -0.5) this.onFloor[i] |= 1;
             if (nzz > 0.5) this.onFloor[j] |= 1;
+            if (nzz < 0) this.onFloor[i] |= BORNE;
+            else if (nzz > 0) this.onFloor[j] |= BORNE;
           }
         }
       }
@@ -1020,7 +1036,8 @@ export class World {
       dx * dx + dy * dy + dz * dz < this.tune.sleepDrift * this.tune.sleepDrift &&
       1 - same * same < SWUNG &&
       d.into[i] < RESTING &&
-      this.deepestOf(i) < RESTING + SLOP
+      this.deepestOf(i) < RESTING + SLOP &&
+      (this.tune.sleepInAir || this.onFloor[i] & BORNE)
     ) {
       this.asleep[i] = 1;
       vx[i] = vy[i] = vz[i] = 0;
@@ -1482,6 +1499,7 @@ export class World {
     if (Math.abs(wnz) < 0.5) this.loadNow[p.owner] = (this.loadNow[p.owner] ?? 0) + 1;
     // on top of the box is a floor: it lies flat there
     else if (wnz > 0.5) this.onFloor[i] |= 2;
+    if (wnz > 0) this.onFloor[i] |= BORNE;
   }
 
   /** The magnet: a pull that grows toward the point, on things low enough to be on the floor. */
@@ -1573,7 +1591,7 @@ export class World {
       const drag = 1 / (1 + this.tune.floorDrag * step);
       vx[i] *= drag;
       vy[i] *= drag;
-      this.onFloor[i] |= 1;
+      this.onFloor[i] |= 1 | BORNE;
       // a body near a rim tips in: the floor slopes to the hole a little
       if (near && nd < near.radius + 2.5) {
         vx[i] -= (ndx / nd) * 6 * step;

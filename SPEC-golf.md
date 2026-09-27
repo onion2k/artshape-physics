@@ -133,6 +133,8 @@ interface Tuning {
   settleBelow: number; // 1.5
   /** The most of its radius a ball may move between looks at what it could hit. */
   travel: number; // Infinity: one look a step, as now
+  /** Whether a body may sleep with nothing under it. (As built, after commit 5: see below.) */
+  sleepInAir: boolean; // true, as now
 }
 
 interface WorldOptions {
@@ -413,6 +415,29 @@ recorded from v0.3.0's own source, shows coins against the rock step bit
 for bit as they did.)
 
 **Performance:** one multiply per contact. The bench should show nothing.
+
+### 5b. A body kept from sleeping in the air (as built)
+
+Not in the spec as agreed; found by feature 5's tests and agreed after.
+Sleep is judged by how far a body is from where it was a window of steps
+before, so a ball bouncing can be back at that height when the window
+closes, and sleep in the air, and hang there: 7 drops in 20 at a floor
+restitution of 0.6, 17 at 0.8, all 20 at 0.9. A coin tossed so that it is
+in the air as its window closes hangs too. v0.3.0 has it; its restitution
+of 0.08 all but hides it.
+
+`sleepInAir` (true, as it always was) set false holds a body to having
+touched something below its middle, however steeply, in the step it would
+sleep. The mark is `BORNE`, beside the floor's 1 and a moving box's 2; the
+floor, a box, another ball, a sleeper leant on and the coin solver each set
+it. Held instead to the floor's own reckoning, a contact within sixty
+degrees of straight down, a big ball nested among small ones never slept.
+With it off, no drop hangs, and heaps of balls and of coins settle exactly
+as with it on, over three seeds each. On by default it would move one of the
+unchanged gate's six scenes, so it is opted into; ooergolf sets it.
+
+The bumpers (feature 8) and the cup's rim (feature 11) hold a ball up, and
+each must mark it `BORNE`.
 
 ### 6. Walls with a height, and water, from the floor's heights
 
@@ -860,6 +885,7 @@ own feature, as its DESIGN.md says.
 | 3   | `hit`                                                               | feature     |
 | 4   | The slow-speed damping, tunable                                     | feature     |
 | 5   | Walls and the floor bounce by a figure, and by kind                 | feature     |
+| 5b  | A body kept from sleeping in the air, opted into (as built)         | feature     |
 | 6   | Walls with a height and water, from floor heights: tests and README | docs, tests |
 | 7   | Pushers that bounce, and `carry`                                    | feature     |
 | 8   | Bumpers                                                             | feature     |
