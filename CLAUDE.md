@@ -125,7 +125,8 @@ which casts to an `Innards` interface to read the private lists.
 - **Setting up:** `new World({...})` on a grid of the test's own
   (`GRID`, with `solid()` giving a border of rock and whatever else a
   predicate marks), `seeded(n)` for chance, `spawn(kind, x, y, z, vx?, vy?,
-vz?)`, `setOrientation`, writing `vx`/`vy`/`vz` and then `wake(i)`,
+vz?)`, `setOrientation`, `hit(i, vx, vy, vz)` (or writing `vx`/`vy`/`vz` and
+  then `wake(i)`, as the older tests do),
   `wakeNear`, `wakeAll`, `carried[i] = 1`, and assigning `pushers`,
   `belts`, `magnet` and a `floor` array. `sweeper()` drives a box round a
   circle. `flat()` and `onEdge()` put a disc down.

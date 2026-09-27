@@ -85,13 +85,15 @@ const world = new World({
 const coin = world.spawn(0, 12, -8, 3); // a kind, where, and how high; awake
 world.pushers = [blade]; // oriented boxes, from wherever the machines are this frame
 world.wakeNear(blade.x, blade.y, 6); // ahead of the blade, so sleepers are ready for it
+world.hit(ball, 30, 0, 0); // a shot: added to its speed, and it is woken
 world.step(1 / 60, (kind, x, y, slot, hole) => bank(kind, hole)); // what left, where, its slot, now free, and which hole, or BOTTOM
 ```
 
 Everything a body is — `x`, `y`, `z`, velocity, radius `r`, thickness `h`,
 orientation `q`, `kind`, `alive`, `asleep`, `carried` — is a typed array the
 caller reads directly for drawing, indexed by the slot `spawn` returned.
-`loads` says how many bodies each owner's pushers were shoving on the last
+`hit` adds to a body's speed and wakes it, which is a shot, or anything a
+game throws; a dead body or a carried one is left be. `loads` says how many bodies each owner's pushers were shoving on the last
 step. A disc is put down as it should lie with `setOrientation`, `axis` says
 which way its face looks, and `deepest` says how far any two bodies are into
 each other, or any two at rest, for a test or a game's own rules.

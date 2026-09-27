@@ -484,4 +484,71 @@ describe('the world', () => {
     for (let f = 0; f < 60; f++) w.step(DT, () => expect.fail('a carried body is not the world to report'));
     expect(w.alive[i]).toBe(1);
   });
+
+  it('hits a sleeping body off at the speed given, just as waking it and writing its speed does', () => {
+    const setUp = () => {
+      const w = world();
+      const i = w.spawn(0, -30, 10, 1);
+      for (let f = 0; f < 180; f++) w.step(DT, () => {});
+      expect(w.asleep[i]).toBe(1);
+      return { w, i };
+    };
+    const hit = setUp(),
+      written = setUp();
+    hit.w.hit(hit.i, 12, -5, 3);
+    written.w.wake(written.i);
+    written.w.vx[written.i] = 12;
+    written.w.vy[written.i] = -5;
+    written.w.vz[written.i] = 3;
+    expect(hit.w.asleep[hit.i]).toBe(0);
+    expect([hit.w.vx[hit.i], hit.w.vy[hit.i], hit.w.vz[hit.i]]).toEqual([12, -5, 3]);
+    for (let f = 0; f < 120; f++) {
+      hit.w.step(DT, () => {});
+      written.w.step(DT, () => {});
+    }
+    for (const a of ['x', 'y', 'z', 'vx', 'vy', 'vz', 'q'] as const) expect(hit.w[a]).toEqual(written.w[a]);
+    expect(hit.w.x[hit.i]).toBeGreaterThan(-30 + 1);
+  });
+
+  it('adds a hit to the speed a body already has', () => {
+    const w = world();
+    const i = w.spawn(0, -30, 10, 1, 5, 0, 0);
+    w.hit(i, 3, 4, 0);
+    expect([w.vx[i], w.vy[i]]).toEqual([8, 4]);
+  });
+
+  it('leaves be a hit on a dead body, a slot never used, and a carried body', () => {
+    const w = world();
+    const gone = w.spawn(0, -30, 10, 1);
+    w.remove(gone);
+    w.hit(gone, 10, 0, 0);
+    expect(w.alive[gone]).toBe(0);
+    expect(w.vx[gone]).toBe(0);
+    w.hit(w.count + 3, 10, 0, 0);
+    w.hit(w.capacity + 3, 10, 0, 0);
+    expect(w.live).toBe(0);
+    const held = w.spawn(0, 10, 10, 6);
+    w.carried[held] = 1;
+    w.hit(held, 10, 0, 5);
+    expect([w.vx[held], w.vy[held], w.vz[held]]).toEqual([0, 0, 0]);
+    for (let f = 0; f < 30; f++) w.step(DT, () => {});
+    expect([w.x[held], w.z[held]]).toEqual([10, 6]);
+    // and let go, it drops where it was held, with nothing of the hit in it
+    w.carried[held] = 0;
+    for (let f = 0; f < 60; f++) w.step(DT, () => {});
+    expect(w.x[held]).toBeCloseTo(10, 5);
+  });
+
+  it('keeps its sleep bookkeeping straight when sleepers in a heap are hit', () => {
+    const random = seeded(4);
+    const w = world({ capacity: 400, random });
+    for (let k = 0; k < 300; k++) w.spawn(0, -40 + random() * 8, 15 + random() * 8, 1 + random() * 4);
+    for (let f = 0; f < 240; f++) w.step(DT, () => {});
+    for (let f = 0; f < 120; f++) {
+      if (f % 10 === 0) for (let k = 0; k < 5; k++) w.hit((f * 7 + k * 53) % 300, 8, -3, 2);
+      w.step(DT, () => {});
+      const wrong = problems(w);
+      if (wrong.length) expect.fail(`frame ${f}: ${wrong.slice(0, 5).join('; ')}`);
+    }
+  });
 });

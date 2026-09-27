@@ -7,7 +7,7 @@
  * a floor of the test's own making, and whatever it puts on it.
  */
 import { describe, expect, it } from 'vitest';
-import { BOTTOM, World, type Grid, type Pusher, type WorldOptions } from '../src/world';
+import { BOTTOM, DEFAULT_TUNING, World, type Grid, type Pusher, type WorldOptions } from '../src/world';
 
 const DT = 1 / 60;
 const GRID: Grid = { cols: 40, rows: 40, originX: -20, originY: -20, tile: 1 };
@@ -581,5 +581,31 @@ describe('a disc', () => {
     const holes: number[] = [];
     for (let f = 0; f < 120; f++) e.step(DT, (_kind, _x, _y, _slot, hole) => holes.push(hole));
     expect(holes).toEqual([BOTTOM]);
+  });
+
+  it('hit as it lies asleep, slides off at no more than the speed given, and is not flung up', () => {
+    const w = world();
+    const i = flat(w, 0, 0, H / 2);
+    run(w, 1);
+    expect(w.asleep[i]).toBe(1);
+    w.hit(i, 5, 0, 0);
+    expect(w.asleep[i]).toBe(0);
+    let fastest = 0,
+      highest = 0;
+    for (let f = 0; f < 120; f++) {
+      w.step(DT, () => {});
+      fastest = Math.max(fastest, Math.hypot(w.vx[i], w.vy[i], w.vz[i]));
+      highest = Math.max(highest, w.z[i]);
+    }
+    // as far as the felt lets a coin slide from that speed, v² over twice grip times gravity, less what the slow
+    // damping takes at the end
+    const slide = (5 * 5) / (2 * DEFAULT_TUNING.grip * DEFAULT_TUNING.gravity);
+    expect(w.x[i]).toBeGreaterThan(slide * 0.8);
+    expect(w.x[i]).toBeLessThan(slide * 1.05);
+    expect(fastest).toBeLessThanOrEqual(5);
+    expect(highest).toBeLessThan(H / 2 + 0.01);
+    expect(tilt(w, i)).toBeLessThan(0.05);
+    run(w, 3);
+    expect(w.asleep[i]).toBe(1);
   });
 });

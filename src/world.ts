@@ -519,6 +519,22 @@ export class World {
     for (let i = 0; i < this.count; i++) this.wake(i);
   }
 
+  /**
+   * A body struck: the speed given is added to what it has, and it is woken,
+   * so it moves on the next step. A shot is this, and so is anything a game
+   * throws. A speed written by hand on a sleeper does nothing until something
+   * else wakes it, and then it moves off from wherever it lay, whenever that
+   * is. A body that is dead, or held and so not stepped, is left be: nothing a
+   * hit gave it would be its own when it was let go.
+   */
+  hit(i: number, vx: number, vy: number, vz: number) {
+    if (!this.alive[i] || this.carried[i]) return;
+    this.wake(i);
+    this.vx[i] += vx;
+    this.vy[i] += vy;
+    this.vz[i] += vz;
+  }
+
   /** Advance by `dt` seconds in fixed steps, reporting what left the world: its kind, where, its slot, which is freed, and which hole. */
   step(dt: number, collect: Collect) {
     this.accumulator = Math.min(this.accumulator + dt, this.tune.step * 4);
