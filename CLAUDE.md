@@ -64,11 +64,13 @@ The gates, one by one:
   scene's budget, or when a scene's runs do not end alike.
 
 The README gives the cost of a coin machine ("fifteen hundred with a few
-hundred awake ... under two milliseconds a frame"). The bench's coin bed
-does not bear that out while the bed is being pushed: about 260 awake cost
-2.1 ms a frame, and 350 to 420 awake cost 3.35 ms. Coinpush's own bench
-puts its machine at 2.35 to 2.54 ms a frame. The figure is to be corrected
-in the README.
+hundred awake ... under two milliseconds a frame"). The bench's coin bed,
+profiled a third of a second at a time, bears that out for about three
+hundred awake (1.8 ms), and not for four hundred (3.2 ms). The bench times
+that scene only while the pusher is in the bed, since the frames either
+side of it cost next to nothing and halved the figure. Coinpush's own
+bench puts its whole machine at 2.35 to 2.54 ms a frame, and the README's
+figure is to say which it means.
 
 ## Layout
 
@@ -181,12 +183,12 @@ applies:
 The bench's budgets, in milliseconds a frame on the fastest run, and its
 baselines as written (on an M4 Pro, Node 23.4.0):
 
-| Scene                                            | Stands for            | Budget | Baseline |
-| ------------------------------------------------ | --------------------- | ------ | -------- |
-| a heap of 2000 balls churned by two pushers      | pushminer             | 3      | 1.87     |
-| a bed of 1500 discs, a few hundred awake, pushed | coinpush              | 2      | 0.66     |
-| one ball shot round a golf course                | ooergolf              | 0.1    | 0.0017   |
-| 64 balls on that course at 120 u/s               | ooergolf, at capacity | 1      | 0.031    |
+| Scene                                                | Stands for            | Budget | Baseline |
+| ---------------------------------------------------- | --------------------- | ------ | -------- |
+| a heap of 2000 balls churned by two pushers          | pushminer             | 3      | 1.87     |
+| a bed of 1500 discs, timed while the pusher is in it | coinpush              | 4      | 1.24     |
+| one ball shot round a golf course                    | ooergolf              | 0.1    | 0.0017   |
+| 64 balls on that course at 120 u/s                   | ooergolf, at capacity | 1      | 0.031    |
 
 The tolerance is the measured wobble with room to spare: over three runs
 no scene moved by more than 7%. The golf scenes grow as the golf features

@@ -228,12 +228,12 @@ wx wy wz r h q alive asleep carried kind`, what has left the world, and the
   relative to a fixed piece of reference arithmetic. The baseline goes in
   `scripts/bench-baseline.json` and is held both ways. The scenes:
 
-  | Scene                                                  | Stands for                           | Budget |
-  | ------------------------------------------------------ | ------------------------------------ | ------ |
-  | a heap of 2000 balls churned by two pushers            | pushminer                            | 3 ms   |
-  | a bed of 1500 discs, a few hundred awake, pushed       | coinpush (the README's "under 2 ms") | 2 ms   |
-  | one ball shot round a golf course at each target speed | ooergolf                             | 0.1 ms |
-  | 64 balls on that course at 120 u/s                     | ooergolf at `BODY_CAPACITY`          | 1 ms   |
+  | Scene                                                  | Stands for                             | Budget |
+  | ------------------------------------------------------ | -------------------------------------- | ------ |
+  | a heap of 2000 balls churned by two pushers            | pushminer                              | 3 ms   |
+  | a bed of 1500 discs, timed while the pusher is in it   | coinpush (its own bench: 2.35–2.54 ms) | 4 ms   |
+  | one ball shot round a golf course at each target speed | ooergolf                               | 0.1 ms |
+  | 64 balls on that course at 120 u/s                     | ooergolf at `BODY_CAPACITY`            | 1 ms   |
 
   The golf scenes arrive with the features they use. Until then they are
   the balls, rock and pushers there are. Each feature that changes the

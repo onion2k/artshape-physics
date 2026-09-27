@@ -6,10 +6,10 @@
     "awake": 783,
     "live": 2000
   },
-  "a bed of 1500 discs, a few hundred awake, pushed": {
-    "relative": 0.04149803029712581,
-    "ms": 0.6571,
-    "ref": 15.8348,
+  "a bed of 1500 discs, timed while the pusher is in it": {
+    "relative": 0.08189427277930444,
+    "ms": 1.2359,
+    "ref": 15.091,
     "awake": 0,
     "live": 1500
   },

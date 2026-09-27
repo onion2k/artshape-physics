@@ -70,7 +70,7 @@ interface Result {
   /** How many bodies were awake at the end, and alive, to show the scene did what it says. */
   awake: number;
   live: number;
-  /** The most awake at any look, and how many on average: what the frames cost was spent on. */
+  /** The most awake at any look in the timed frames, and how many on average: what the time was spent on. */
   most: number;
   mean: number;
   /** How each run ended, awake of live, which must be the same every run. */
@@ -82,7 +82,14 @@ interface Scene {
   /** The most a frame may take, in milliseconds, on the fastest run, whatever the baseline says. */
   budget: number;
   frames: number;
-  /** The world as the timing starts, spawned and settled, and what timed frame `f` of it is. */
+  /**
+   * Which of the frames are timed, if not all of them: the rest are stepped
+   * and not counted. A scene whose costly part comes and goes, as a pusher's
+   * stroke does, is held to that part, not to an average that the quiet
+   * frames between would flatter.
+   */
+  timed?: (f: number) => boolean;
+  /** The world as the timing starts, spawned and settled, and what frame `f` of it is. */
   setup: () => { world: World; frame: (f: number) => void };
 }
 
@@ -216,6 +223,9 @@ function slabFront(t: number): number {
   return reach - SLAB.travel * (1 + Math.cos((2 * Math.PI * t) / SLAB.period)) * 0.5;
 }
 
+/** The front of the bed as it is laid: its first row, just inside the pusher's fullest reach. */
+const BED = slabFront(SLAB.period / 2) - LAY.prime;
+
 function machine(seed: number) {
   const random = seeded(seed);
   const grid: Grid = { cols: 32, rows: MACHINE.half * 2 + 2, originX: -16, originY: -MACHINE.half - 1, tile: 1 };
@@ -249,7 +259,7 @@ function machine(seed: number) {
         out.push([x + (random() - 0.5) * 0.03, y + (random() - 0.5) * 0.03, z]);
     }
   };
-  const start = slabFront(SLAB.period / 2) - LAY.prime;
+  const start = BED;
   bed(first, start, MACHINE.step - LAY.margin, MACHINE.upper + flat + 0.002);
   bed(first, MACHINE.step + LAY.margin, MACHINE.edge - LAY.margin, flat + 0.002);
   bed(second, start + LAY.row / 2, MACHINE.step - LAY.margin - 0.3, MACHINE.upper + flat * 3 + 0.004);
@@ -464,10 +474,16 @@ const SCENES: Scene[] = [
     setup: () => heap(7),
   },
   {
-    name: 'a bed of 1500 discs, a few hundred awake, pushed',
-    budget: 2,
+    name: 'a bed of 1500 discs, timed while the pusher is in it',
+    // What coinpush's own bench measures its machine at, 2.35 to 2.54 ms a frame, with room. The heaviest half
+    // second of the first stroke, with four hundred awake, costs 3.2 ms.
+    budget: 4,
     // two strokes: the first pushes into the bed as it was primed, and the second meets what the first has left
     frames: Math.round((SLAB.period * 2) / DT),
+    // Only while the pusher's face is within a unit of the bed, going in and coming back out: the push, and the
+    // bed settling after it. Before that the pusher crosses empty floor and the bed sleeps, and those frames,
+    // which cost next to nothing, halved the figure and hid what a push costs.
+    timed: (f) => slabFront((f + 1) * DT) >= BED - 1,
     setup: () => machine(1),
   },
   {
@@ -524,21 +540,32 @@ function measure(s: Scene): Result {
   for (let run = 0; run < RUNS; run++) {
     const { world, frame } = s.setup();
     let spent = 0,
+      counted = 0,
       looks = 0,
       seen = 0;
     most = 0;
     for (let f = 0; f < s.frames;) {
-      const end = Math.min(s.frames, f + LOOK);
-      const t = performance.now();
+      // a stretch of frames that are all timed or all not, and no longer than a look apart
+      const timing = s.timed?.(f) ?? true;
+      let end = f + 1;
+      while (end < s.frames && end - f < LOOK && (s.timed?.(end) ?? true) === timing) end++;
+      const from = f,
+        t = performance.now();
       for (; f < end; f++) frame(f);
-      spent += performance.now() - t;
+      if (timing) {
+        spent += performance.now() - t;
+        counted += end - from;
+      }
       awake = awakeIn(world);
-      most = Math.max(most, awake);
-      seen += awake;
-      looks++;
+      // what the timed frames were spent on, so the untimed ones do not water it down
+      if (timing) {
+        most = Math.max(most, awake);
+        seen += awake;
+        looks++;
+      }
     }
     mean = seen / looks;
-    best = Math.min(best, spent / s.frames);
+    best = Math.min(best, spent / counted);
     live = world.live;
     ends.push(`${awake} of ${live}`);
   }
