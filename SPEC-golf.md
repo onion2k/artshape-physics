@@ -204,15 +204,22 @@ This is a tool. It lands first so that everything after it is measured.
 
 **What:**
 
-- **The unchanged gate.** `test/unchanged.test.ts` runs four scenes from
-  fixed seeds, with no new option set:
-  - a heap of 900 balls churned by two sweepers, with a hole
-  - a bed of 300 discs pushed across floor heights to the bottom
-  - balls driven against a wall one tile thick
-  - a belt and a magnet
+- **The unchanged gate.** `test/unchanged.test.ts` runs five scenes from
+  fixed seeds, with no new option set (as built: the spec had four, and a
+  fifth was needed for coins in a hole, which no other scene reached):
+  - a heap of 900 balls churned by two sweepers beside a hole, topped up as
+    they fall in
+  - balls shoved into a wall one tile thick, and thrown at it at 60, 300
+    and 700 u/s
+  - balls on tiers, with a belt over the edge to the bottom, a magnet, a
+    box that carries, a carried body, and frames of uneven length
+  - a bed of 290 coins and balls pushed over a step and a drop
+  - coins pushed down a hole on a flat floor
 
   It hashes every body's arrays (FNV-1a over the bytes of `x y z vx vy vz
-q asleep alive`) at frames 60, 300 and 600, and compares the hashes with
+wx wy wz r h q alive asleep carried kind`, what has left the world, and the
+  loads) at frames 60, 300 and 600. Each scene is run twice, to show it is
+  the same from its seed, and the hashes are compared with
   `test/unchanged.json`. That file is written once, at v0.3.0, before any
   source changes. From then on every commit must match it bit for bit.
 
@@ -247,10 +254,20 @@ q asleep alive`) at frames 60, 300 and 600, and compares the hashes with
 2. The bench runs the same scene twice on one seed and gets the same
    awake and live counts. On three runs its relative figure varies by less
    than the tolerance. That wobble is measured and written into the file,
-   and it is the tolerance: 20% both ways with 0.05 ms of slack, as in
-   ooergolf, unless the wobble here is wider.
-3. `npm run bench` with the 0.96 made 0.99 (bodies stay awake longer)
-   fails the heap scene.
+   and it is the tolerance: 20% both ways. The slack is a fifth of a
+   microsecond, not ooergolf's 0.05 ms, which is thirty times a one-ball
+   frame and would have hidden the golf scenes entirely (as built: the
+   wobble measured was 7% at most).
+3. A change that makes frames dearer fails the bench. As built, the 0.99
+   damping this criterion first named does not: a ball damped harder sleeps
+   sooner, since sleep goes by distance, and the heap came out 1% faster.
+   What was checked instead: bodies kept awake twice as long
+   (`sleepSteps` 80) fail the coin bed at +61%, and the rock looked at
+   twice a step, which is what a second piece of a fast ball costs, fails
+   the 64-ball scene at +20%. The one-ball scene moves only 6% under that,
+   because one ball's frame is mostly what a step costs whatever is in it.
+   It is held by its budget, and its figure is read before and after
+   feature 10 rather than trusted to fail.
 
 **Edge cases:** determinism is the point of the unchanged gate. Its limit is
 that bit-identity rests on V8's `Math` functions. If a Node upgrade moves
@@ -259,8 +276,8 @@ to confirm the move comes from Node, and the commit says so.
 
 **Discs:** the disc bed is in both gates.
 
-**Performance:** it costs `check` the bench's run time, estimated at about
-10 s and to be measured.
+**Performance:** the bench takes 8.5 s, and `check` takes 16 s (as built;
+it was estimated at about 10 s more).
 
 ### 2. Which hole took the ball
 

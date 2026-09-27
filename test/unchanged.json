@@ -1,0 +1,87 @@
+{
+  "a heap churned by two sweepers, beside a hole": {
+    "60": {
+      "hash": "59717cd1",
+      "live": 864,
+      "awake": 496
+    },
+    "300": {
+      "hash": "6a7a04dc",
+      "live": 835,
+      "awake": 511
+    },
+    "600": {
+      "hash": "2836c415",
+      "live": 724,
+      "awake": 138
+    }
+  },
+  "balls shoved into a wall a tile thick, and thrown at it": {
+    "60": {
+      "hash": "06c7c9cf",
+      "live": 501,
+      "awake": 390
+    },
+    "300": {
+      "hash": "ee1ef7c7",
+      "live": 507,
+      "awake": 34
+    },
+    "600": {
+      "hash": "dda16450",
+      "live": 515,
+      "awake": 29
+    }
+  },
+  "balls on tiers, with a belt, a magnet and a box that carries, at uneven frames": {
+    "60": {
+      "hash": "fa95d438",
+      "live": 216,
+      "awake": 16
+    },
+    "300": {
+      "hash": "f9eaf1ad",
+      "live": 219,
+      "awake": 9
+    },
+    "600": {
+      "hash": "5c41cd2e",
+      "live": 219,
+      "awake": 9
+    }
+  },
+  "a bed of coins and some balls pushed over a step and a drop": {
+    "60": {
+      "hash": "2ddc2f45",
+      "live": 290,
+      "awake": 64
+    },
+    "300": {
+      "hash": "dd0a3683",
+      "live": 289,
+      "awake": 238
+    },
+    "600": {
+      "hash": "a664d9f7",
+      "live": 81,
+      "awake": 13
+    }
+  },
+  "coins pushed down a hole on a flat floor": {
+    "60": {
+      "hash": "8a4d0a3a",
+      "live": 130,
+      "awake": 27
+    },
+    "300": {
+      "hash": "55a98a62",
+      "live": 55,
+      "awake": 54
+    },
+    "600": {
+      "hash": "879a0371",
+      "live": 55,
+      "awake": 13
+    }
+  }
+}

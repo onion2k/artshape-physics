@@ -28,15 +28,19 @@ needed slopes.
 
 ## Commands
 
-    npm run check        formatting, types, lint, and the tests (~7 s): the full check
-    npm test             the tests alone (Vitest, test/)
-    npm run test:watch   the tests, again on each save
-    npm run typecheck    tsc, no emit
-    npm run lint         eslint, type-aware
-    npm run format       prettier, writing
+    npm run check          the full check: check:quick, then the bench (~16 s)
+    npm run check:quick    formatting, types, lint, and the tests (~7 s)
+    npm test               the tests alone (Vitest, test/), the unchanged gate among them
+    npm run test:watch     the tests, again on each save
+    npm run bench          a frame's cost in four scenes, held to scripts/bench-baseline.json and a budget (~8.5 s)
+    npm run typecheck      tsc, no emit
+    npm run lint           eslint, type-aware
+    npm run format         prettier, writing
 
-There is no pre-commit hook and no quick check apart from the full one.
-`npm run check` is quick enough to be both.
+`npm run bench -- --update` writes the bench's baseline again, and
+`UNCHANGED_UPDATE=1 npx vitest run test/unchanged.test.ts` the unchanged
+gate's hashes. Each is only for a change meant to move it, and the commit
+says why. There is no pre-commit hook: run `check:quick` before a commit.
 
 The gates, one by one:
 
@@ -46,13 +50,25 @@ The gates, one by one:
   `switch-exhaustiveness-check` and `no-unnecessary-condition`. It is for
   mistakes, not style.
 - **Tests:** `vitest run`. Every behaviour the README claims has a test.
+- **Unchanged:** `test/unchanged.test.ts`, among the tests. Five scenes run
+  from seeds with no new option set, every body's state hashed at frames
+  60, 300 and 600, and held bit for bit to `test/unchanged.json`, written at
+  v0.3.0. It is what says a game that has not opted in behaves exactly as
+  before. Each scene is run twice, so a hash that moves is a change and not
+  chance. A Node upgrade that moves it is confirmed on the old commit first.
+- **Bench:** `scripts/bench.ts`. Four scenes, one for each game's costly
+  part, each run four times fresh in a worker, the fastest counted, and held
+  as a multiple of a piece of reference arithmetic, so a baseline written on
+  one machine means something on another. It fails at 20% slower or faster
+  than the baseline, past a slack of a fifth of a microsecond, over a
+  scene's budget, or when a scene's runs do not end alike.
 
-There is **no performance gate**. The README gives the cost of a coin
-machine ("fifteen hundred with a few hundred awake ... under two
-milliseconds a frame"), but nothing holds the package to that figure. It
-needs a bench and a baseline, as ooergolf's `scripts/bench.ts` has. That is
-proposed in `SPEC-golf.md`, and it lands before any feature that costs
-time a frame.
+The README gives the cost of a coin machine ("fifteen hundred with a few
+hundred awake ... under two milliseconds a frame"). The bench's coin bed
+does not bear that out while the bed is being pushed: about 260 awake cost
+2.1 ms a frame, and 350 to 420 awake cost 3.35 ms. Coinpush's own bench
+puts its machine at 2.35 to 2.54 ms a frame. The figure is to be corrected
+in the README.
 
 ## Layout
 
@@ -94,7 +110,10 @@ time a frame.
 - **A tool that measures:** `World.deepest(resting)`, which says how far any
   two bodies are into each other, and `problems()` in `test/world.test.ts`,
   which checks the sleep bookkeeping between steps. Both are read by tests
-  and changed by nothing.
+  and changed by nothing. For a gate, the bench (`scripts/bench.ts`) and the
+  unchanged gate: a scene each for what is held, from a seed, checked to be
+  the same work each run, and seen to fail when the thing it holds is
+  broken on purpose.
 
 ## The test API
 
@@ -150,14 +169,28 @@ applies:
 
 ## Gates and baselines
 
-| Gate      | Holds the package to                     | Baseline and tolerance |
-| --------- | ---------------------------------------- | ---------------------- |
-| Format    | prettier's formatting                    | none: pass or fail     |
-| Types     | strict TypeScript                        | none: pass or fail     |
-| Lint      | the type-aware rules                     | none: pass or fail     |
-| Tests     | every behaviour the README claims        | 30 tests at v0.3.0     |
-| Perf      | **none yet**: proposed in `SPEC-golf.md` |                        |
-| Unchanged | **none yet**: proposed in `SPEC-golf.md` |                        |
+| Gate      | Holds the package to                    | Baseline and tolerance                                         |
+| --------- | --------------------------------------- | -------------------------------------------------------------- |
+| Format    | prettier's formatting                   | none: pass or fail                                             |
+| Types     | strict TypeScript                       | none: pass or fail                                             |
+| Lint      | the type-aware rules                    | none: pass or fail                                             |
+| Tests     | every behaviour the README claims       | 30 tests at v0.3.0                                             |
+| Unchanged | every game's world as v0.3.0 stepped it | `test/unchanged.json`, bit for bit                             |
+| Bench     | what a frame costs, in four scenes      | `scripts/bench-baseline.json`, ±20% both ways, 0.0002 ms slack |
+
+The bench's budgets, in milliseconds a frame on the fastest run, and its
+baselines as written (on an M4 Pro, Node 23.4.0):
+
+| Scene                                            | Stands for            | Budget | Baseline |
+| ------------------------------------------------ | --------------------- | ------ | -------- |
+| a heap of 2000 balls churned by two pushers      | pushminer             | 3      | 1.87     |
+| a bed of 1500 discs, a few hundred awake, pushed | coinpush              | 2      | 0.66     |
+| one ball shot round a golf course                | ooergolf              | 0.1    | 0.0017   |
+| 64 balls on that course at 120 u/s               | ooergolf, at capacity | 1      | 0.031    |
+
+The tolerance is the measured wobble with room to spare: over three runs
+no scene moved by more than 7%. The golf scenes grow as the golf features
+land, and each baseline is written again then, saying why.
 
 ## Releasing
 

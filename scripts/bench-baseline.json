@@ -1,0 +1,30 @@
+{
+  "a heap of 2000 balls churned by two pushers": {
+    "relative": 0.11739456452881786,
+    "ms": 1.869,
+    "ref": 15.9203,
+    "awake": 783,
+    "live": 2000
+  },
+  "a bed of 1500 discs, a few hundred awake, pushed": {
+    "relative": 0.04149803029712581,
+    "ms": 0.6571,
+    "ref": 15.8348,
+    "awake": 0,
+    "live": 1500
+  },
+  "one ball shot round a golf course": {
+    "relative": 0.00010692400654854999,
+    "ms": 0.0017,
+    "ref": 15.695,
+    "awake": 1,
+    "live": 1
+  },
+  "64 balls on that course at 120 u/s": {
+    "relative": 0.0019871249956801857,
+    "ms": 0.0311,
+    "ref": 15.6729,
+    "awake": 60,
+    "live": 64
+  }
+}
