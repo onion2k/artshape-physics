@@ -7,7 +7,7 @@
  * a floor of the test's own making, and whatever it puts on it.
  */
 import { describe, expect, it } from 'vitest';
-import { World, type Grid, type Pusher, type WorldOptions } from '../src/world';
+import { BOTTOM, World, type Grid, type Pusher, type WorldOptions } from '../src/world';
 
 const DT = 1 / 60;
 const GRID: Grid = { cols: 40, rows: 40, originX: -20, originY: -20, tile: 1 };
@@ -553,5 +553,33 @@ describe('a disc', () => {
     const alone = w.spawn(BALL, 8, 8, 2);
     run(w, 3);
     expect(w.z[alone]).toBeCloseTo(R, 2);
+  });
+
+  it('down a hole is reported with the hole, even gone below the bottom, and off an edge with none', () => {
+    const w = world({
+      holes: [
+        { x: -10, y: 0, radius: 1.5, depth: 1000 },
+        { x: 10, y: 0, radius: 1.5, depth: 3 },
+      ],
+      bottom: -6,
+    });
+    const deep = flat(w, -10, 0, 0.5),
+      shallow = flat(w, 10, 0, 0.5);
+    const fell: { slot: number; hole: number; frame: number }[] = [];
+    for (let f = 0; f < 240; f++) w.step(DT, (_kind, _x, _y, slot, hole) => fell.push({ slot, hole, frame: f }));
+    expect(fell.sort((a, b) => a.slot - b.slot).map(({ slot, hole }) => ({ slot, hole }))).toEqual([
+      { slot: deep, hole: 0 },
+      { slot: shallow, hole: 1 },
+    ]);
+    // the deep hole's coin is gone once it passes the bottom, not a thousand units down
+    expect(fell[0].frame).toBeLessThan(60);
+    // a floor that drops away to the east, and a coin put down over the drop
+    const floor = new Float32Array(GRID.cols * GRID.rows);
+    for (let ty = 0; ty < GRID.rows; ty++) for (let tx = 30; tx < GRID.cols; tx++) floor[ty * GRID.cols + tx] = -30;
+    const e = world({ floor, bottom: -6 });
+    flat(e, GRID.originX + 34, 0, 0.5);
+    const holes: number[] = [];
+    for (let f = 0; f < 120; f++) e.step(DT, (_kind, _x, _y, _slot, hole) => holes.push(hole));
+    expect(holes).toEqual([BOTTOM]);
   });
 });

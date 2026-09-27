@@ -297,6 +297,13 @@ for spheres and discs alike.
 
 - A body over two overlapping holes is reported by the first in the list,
   as it falls now.
+- A hole that reaches below the bottom (as built: this was not in the
+  spec). v0.3.0 looked at the bottom before the holes, so what went down a
+  hole deeper than the bottom was reported as out of the bottom, which
+  would tell the cup from nothing. The holes are now looked at first, and a
+  body over one is gone once it passes the bottom, as the hole's. It changes
+  only a world with both holes and a bottom, which no game has, the same
+  rule as open question 10.
 - At capacity: a freed slot is used again.
 - A carried body is never reported.
 
@@ -793,7 +800,8 @@ cup from that table (open question 1).
 - Carried: untouched.
 - Floor heights: the level of a raised cup.
 - The bottom: a cup deeper than the bottom still reports the hole, not
-  `BOTTOM`, because the hole is checked first, as now.
+  `BOTTOM`, because feature 2 looks at the holes first. (This line said "as
+  now"; v0.3.0 looked at the bottom first.)
 - More than one hole.
 - A fast ball: the rim is looked at in each piece (feature 10), so a fast
   ball cannot miss the far rim between steps.

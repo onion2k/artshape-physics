@@ -4,7 +4,7 @@
  * or a cave; a kind is a radius, and that is all the world knows of one.
  */
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_TUNING, World, type Grid, type Hole, type Pusher, type WorldOptions } from '../src/world';
+import { BOTTOM, DEFAULT_TUNING, World, type Grid, type Hole, type Pusher, type WorldOptions } from '../src/world';
 
 const DT = 1 / 60;
 const GRID: Grid = { cols: 60, rows: 40, originX: -90, originY: -60, tile: 3 };
@@ -432,5 +432,56 @@ describe('the world', () => {
     expect(w.asleep[i]).toBe(1);
     w.wakeAll();
     expect(w.asleep[i]).toBe(0);
+  });
+
+  it('says which hole took a body, even one gone below the bottom on the way down, and each only once', () => {
+    // The first hole reaches far below the world's bottom and the second does not. What goes down the first is
+    // gone once it passes the bottom, as anything is, and is still the hole's.
+    const w = world({
+      holes: [
+        { ...HOLE, depth: 1000 },
+        { x: 40, y: 20, radius: 4, depth: 6 },
+      ],
+      bottom: -6,
+    });
+    const deep = w.spawn(1, HOLE.x, HOLE.y, 2),
+      shallow = w.spawn(0, 40, 20, 2);
+    const fell: { slot: number; hole: number; frame: number }[] = [];
+    for (let f = 0; f < 240; f++) w.step(DT, (_kind, _x, _y, slot, hole) => fell.push({ slot, hole, frame: f }));
+    expect(fell.sort((a, b) => a.slot - b.slot).map(({ slot, hole }) => ({ slot, hole }))).toEqual([
+      { slot: deep, hole: 0 },
+      { slot: shallow, hole: 1 },
+    ]);
+    // eight units fallen takes half a second, not the five and a half it would take to fall a thousand
+    expect(fell[0].frame).toBeLessThan(60);
+    expect(w.live).toBe(0);
+  });
+
+  it('says a body over two holes that overlap went down the first of them in the list', () => {
+    // the first reaches from x 2 to 10 and the second from -5 to 5; the body is dropped where both are
+    const w = world({ holes: [{ x: 6, y: 0, radius: 4, depth: 6 }, HOLE] });
+    w.spawn(0, 3.5, 0, 2);
+    const holes: number[] = [];
+    for (let f = 0; f < 240; f++) w.step(DT, (_kind, _x, _y, _slot, hole) => holes.push(hole));
+    expect(holes).toEqual([0]);
+  });
+
+  it('says a body that fell out of the bottom came out of no hole', () => {
+    const floor = new Float32Array(GRID.cols * GRID.rows);
+    for (let ty = 0; ty < GRID.rows; ty++) for (let tx = 40; tx < GRID.cols; tx++) floor[ty * GRID.cols + tx] = -30;
+    const w = world({ floor, holes: [], bottom: -6 });
+    w.spawn(0, GRID.originX + 45 * GRID.tile, 5, 1);
+    const holes: number[] = [];
+    for (let f = 0; f < 120; f++) w.step(DT, (_kind, _x, _y, _slot, hole) => holes.push(hole));
+    expect(BOTTOM).toBe(-1);
+    expect(holes).toEqual([BOTTOM]);
+  });
+
+  it('never reports a carried body, even one held over a hole below the bottom', () => {
+    const w = world({ bottom: -6 });
+    const i = w.spawn(0, HOLE.x, HOLE.y, -8);
+    w.carried[i] = 1;
+    for (let f = 0; f < 60; f++) w.step(DT, () => expect.fail('a carried body is not the world to report'));
+    expect(w.alive[i]).toBe(1);
   });
 });

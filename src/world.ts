@@ -46,6 +46,17 @@ export interface Hole {
   depth: number;
 }
 
+/** The hole a body is reported to have left by when it fell out of the bottom of the world, down no hole at all. */
+export const BOTTOM = -1;
+
+/**
+ * What the world calls with a body that has left it: its kind, where it
+ * was, its slot, which is free again by the time this returns, and the hole
+ * it went down, as an index into `holes`, or `BOTTOM`. A game tells the cup
+ * from the water by it.
+ */
+export type Collect = (kind: number, x: number, y: number, i: number, hole: number) => void;
+
 /** The numbers the stepping runs on. The defaults are a coin-sized world in units of about a coin's width. */
 export interface Tuning {
   /** The fixed step, in seconds. */
@@ -508,8 +519,8 @@ export class World {
     for (let i = 0; i < this.count; i++) this.wake(i);
   }
 
-  /** Advance by `dt` seconds in fixed steps, reporting what fell into a hole: its kind, where, and its slot, which is freed. */
-  step(dt: number, collect: (kind: number, x: number, y: number, i: number) => void) {
+  /** Advance by `dt` seconds in fixed steps, reporting what left the world: its kind, where, its slot, which is freed, and which hole. */
+  step(dt: number, collect: Collect) {
     this.accumulator = Math.min(this.accumulator + dt, this.tune.step * 4);
     const steps = Math.floor(this.accumulator / this.tune.step + 1e-6);
     // The machines moved the whole frame at once; the blade is swept there
@@ -524,7 +535,7 @@ export class World {
     this.lag = 0;
   }
 
-  private substep(collect: (kind: number, x: number, y: number, i: number) => void) {
+  private substep(collect: Collect) {
     const { x, y, z, vx, vy, vz, alive, asleep, carried, awake } = this;
     this.steps++;
     this.loadNow.length = 0;
@@ -910,7 +921,7 @@ export class World {
    * right by position, its speed and spin are read back from how far it
    * got, and if it has not got far, nor turned far, it sleeps.
    */
-  private stepDisc(i: number, collect: (kind: number, x: number, y: number, i: number) => void) {
+  private stepDisc(i: number, collect: Collect) {
     const d = this.discs!;
     for (const o of this.placed) this.discBox(i, o);
     // the rock moves it like any contact: put out of it, and no faster for having been put
@@ -1009,23 +1020,25 @@ export class World {
     return deepest;
   }
 
-  /** The floor under a disc, and the bottom and the holes it may leave the world by: whether it is still in it. */
-  private discFloor(i: number, collect: (kind: number, x: number, y: number, i: number) => void): boolean {
+  /** The floor under a disc, and the holes and the bottom it may leave the world by: whether it is still in it. */
+  private discFloor(i: number, collect: Collect): boolean {
     const { x, y, z } = this;
-    if (z[i] < this.bottom) {
-      collect(this.kind[i], x[i], y[i], i);
-      this.remove(i);
-      return false;
-    }
-    for (const hole of this.holes) {
+    for (let k = 0; k < this.holes.length; k++) {
+      const hole = this.holes[k];
       if (Math.hypot(x[i] - hole.x, y[i] - hole.y) >= hole.radius) continue;
-      // over the hole there is no floor, and at the bottom of it the disc is collected
-      if (z[i] < -hole.depth + 3) {
-        collect(this.kind[i], x[i], y[i], i);
+      // Over the hole there is no floor, and at the bottom of it the disc is collected. A hole that reaches below
+      // the world's bottom still has what went down it: it is the hole the game is told of, not the bottom.
+      if (z[i] < -hole.depth + 3 || z[i] < this.bottom) {
+        collect(this.kind[i], x[i], y[i], i, k);
         this.remove(i);
         return false;
       }
       return true;
+    }
+    if (z[i] < this.bottom) {
+      collect(this.kind[i], x[i], y[i], i, BOTTOM);
+      this.remove(i);
+      return false;
     }
     const d = this.discs!;
     if (d.plane(i, 0, 0, 0, 0, 0, 1, 0, 0, this.floorUnder)) {
@@ -1442,21 +1455,16 @@ export class World {
     vy[i] += b.dx * -across * 0.6 * k;
   }
 
-  private floor(i: number, collect: (kind: number, x: number, y: number, i: number) => void) {
+  private floor(i: number, collect: Collect) {
     const { x, y, z, vx, vy, vz, r } = this;
     const step = this.tune.step;
-    // out of the bottom of the world: gone, and reported
-    if (z[i] < this.bottom) {
-      collect(this.kind[i], x[i], y[i], i);
-      this.remove(i);
-      return;
-    }
     // the nearest hole, for the floor's slope toward it; and any it is over, which it falls into
     let near: Hole | null = null,
       nd = Infinity,
       ndx = 0,
       ndy = 0;
-    for (const h of this.holes) {
+    for (let k = 0; k < this.holes.length; k++) {
+      const h = this.holes[k];
       const dx = x[i] - h.x,
         dy = y[i] - h.y;
       const d = Math.hypot(dx, dy);
@@ -1474,8 +1482,9 @@ export class World {
             vy[i] -= ny * vn;
           }
         }
-        if (z[i] < -h.depth + 3) {
-          collect(this.kind[i], x[i], y[i], i);
+        // down the hole, and the hole's even if it reaches below the bottom of the world, as a cup under water might
+        if (z[i] < -h.depth + 3 || z[i] < this.bottom) {
+          collect(this.kind[i], x[i], y[i], i, k);
           this.remove(i);
         }
         return;
@@ -1486,6 +1495,12 @@ export class World {
         ndy = dy;
         near = h;
       }
+    }
+    // out of the bottom of the world, down no hole: gone, and reported
+    if (z[i] < this.bottom) {
+      collect(this.kind[i], x[i], y[i], i, BOTTOM);
+      this.remove(i);
+      return;
     }
     const fz = this.floorAt(x[i], y[i]);
     if (z[i] < fz + r[i]) {

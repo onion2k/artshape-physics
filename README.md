@@ -50,10 +50,13 @@ tiles, and what falls into a hole is reported through a callback.
   above, and what goes over an edge falls to the tier it lands on. A body
   resting on top of a pusher's box lies flat and is carried with it, which
   is what a sliding platform is. Below the world's **bottom** a body has
-  fallen out of it, and is reported like one down a hole.
+  fallen out of it, and is reported like one down a hole, as down none:
+  `BOTTOM`.
 - **Holes** are where bodies leave the world: as many as the caller gives it,
   each with a rim the floor slopes toward, a wall to the pit, and a depth at
-  which what fell is reported and its slot freed.
+  which what fell is reported, with which hole it went down, and its slot
+  freed. A hole that reaches below the bottom still has what goes down it:
+  the body is gone once it passes the bottom, and reported as the hole's.
 - **Chance** comes from a function the caller hands in, and the **tuning** —
   gravity, friction, restitution, drag, the sleep window, the hash cell — is
   a record with a coin-sized world as its defaults.
@@ -82,7 +85,7 @@ const world = new World({
 const coin = world.spawn(0, 12, -8, 3); // a kind, where, and how high; awake
 world.pushers = [blade]; // oriented boxes, from wherever the machines are this frame
 world.wakeNear(blade.x, blade.y, 6); // ahead of the blade, so sleepers are ready for it
-world.step(1 / 60, (kind, x, y, slot) => bank(kind)); // what fell in, or out of the bottom, and its slot is free again
+world.step(1 / 60, (kind, x, y, slot, hole) => bank(kind, hole)); // what left, where, its slot, now free, and which hole, or BOTTOM
 ```
 
 Everything a body is — `x`, `y`, `z`, velocity, radius `r`, thickness `h`,
@@ -95,16 +98,25 @@ each other, or any two at rest, for a test or a game's own rules.
 
 ## Checking it
 
-    npm run check     formatting, types, lint, and the tests
+    npm run check         check:quick, then the bench
+    npm run check:quick   formatting, types, lint, and the tests
+    npm run bench         what a frame costs, held to a baseline both ways and to a budget
 
 The tests build a floor of their own and put things on it: a dropped body
-rests at its radius and sleeps; a hole collects once and frees the slot; a
+rests at its radius and sleeps; a hole collects once, says which hole it
+was, and frees the slot, even one that reaches below the bottom; a
 world has as many holes as it is given; the sleep bookkeeping stays straight
 while pushers churn a heap; nothing is shoved into or through the rock; a
 belt carries and a magnet pulls; a body rests on the tile under it, falls
 from a high tile to a low one, is stopped by a step from below, and is
 reported when it falls out of the bottom; one on a box's top lies flat and
 is carried; chance from a seed gives the same world twice.
+
+Five scenes, run from seeds, hold the world bit for bit to how v0.3.0 stepped
+it, so a game that has not asked for anything new gets nothing new. The
+bench holds a frame's cost in a scene for each game that uses the package: a
+heap churned, a bed of coins pushed, and a golf ball shot round a course,
+alone and sixty-four at once.
 
 The discs have tests of their own, of what a coin does: lying, stacking,
 leaning as put and as dropped, wedged on edge, tipping off an overhang, over
