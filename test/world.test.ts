@@ -4,7 +4,16 @@
  * or a cave; a kind is a radius, and that is all the world knows of one.
  */
 import { describe, expect, it } from 'vitest';
-import { BOTTOM, DEFAULT_TUNING, World, type Grid, type Hole, type Pusher, type WorldOptions } from '../src/world';
+import {
+  BOTTOM,
+  DEFAULT_TUNING,
+  World,
+  type Grid,
+  type Hole,
+  type Pusher,
+  type Tuning,
+  type WorldOptions,
+} from '../src/world';
 
 const DT = 1 / 60;
 const GRID: Grid = { cols: 60, rows: 40, originX: -90, originY: -60, tile: 3 };
@@ -550,5 +559,37 @@ describe('the world', () => {
       const wrong = problems(w);
       if (wrong.length) expect.fail(`frame ${f}: ${wrong.slice(0, 5).join('; ')}`);
     }
+  });
+
+  it('settles a slow ball by the figures it is given: a slow roll goes on unsettled, or settles only below a lower speed', () => {
+    const roll = (tuning: Partial<Tuning>, speed: number) => {
+      const w = world({ holes: [], tuning: { floorDrag: 0, ...tuning } });
+      const i = w.spawn(0, -60, 10, RADII[0], speed, 0, 0);
+      for (let f = 0; f < 300; f++) w.step(DT, () => {});
+      return w.x[i] + 60;
+    };
+    expect(DEFAULT_TUNING.settle).toBe(0.96);
+    expect(DEFAULT_TUNING.settleBelow).toBe(1.5);
+    // at the defaults a ball at 1 u/s is under the settling speed, and stops within a third of a unit
+    expect(roll({}, 1)).toBeLessThan(0.3);
+    // unsettled, nothing slows it on a floor with no drag, and it rolls on for the five seconds
+    expect(roll({ settle: 1 }, 1)).toBeGreaterThan(4);
+    // settling only below half a unit a second, a ball at 0.8 is not settled at all
+    expect(roll({ settleBelow: 0.25 }, 0.8)).toBeGreaterThan(3);
+    expect(roll({}, 0.8)).toBeLessThan(0.3);
+  });
+
+  it('puts a slow roll to sleep by how far it goes, not how fast, so unsettled it sleeps still moving', () => {
+    // at 0.6 u/s a ball goes 0.2 in a sleep window, under the drift a sleeper may have
+    const w = world({ holes: [], tuning: { floorDrag: 0, settle: 1 } });
+    const i = w.spawn(0, -60, 10, RADII[0], 0.6, 0, 0);
+    let before = 0;
+    for (let f = 0; f < 300 && !w.asleep[i]; f++) {
+      before = w.vx[i];
+      w.step(DT, () => {});
+    }
+    expect(w.asleep[i]).toBe(1);
+    expect(before).toBeGreaterThan(0.55);
+    expect(w.vx[i]).toBe(0);
   });
 });

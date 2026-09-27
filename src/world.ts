@@ -73,6 +73,19 @@ export interface Tuning {
   cell: number;
   /** How the floor and the top of a box hold a disc against sliding: felt under a coin, which holds better than a coin does. */
   grip: number;
+  /**
+   * The slow-speed settling: a body going slower than `settleBelow`, which is
+   * the square of a speed, has its speed, and a disc its spin, multiplied by
+   * `settle` each step. It takes the fizz out of a settling heap, and it is
+   * how a slow roll ends: at the defaults anything under about 1.2 u/s stops
+   * within a quarter of a unit, which decides whether a putt dies at the lip
+   * of a cup or drops. `settle` at 1 turns it off. Sleep is judged by how far
+   * a body has gone over a window, not by how fast it is going, so a roll slow
+   * enough to go less than `sleepDrift` in a window goes to sleep, and stops,
+   * however it is settled.
+   */
+  settle: number;
+  settleBelow: number;
 }
 
 /**
@@ -122,6 +135,8 @@ export const DEFAULT_TUNING: Tuning = {
   sleepSteps: 40,
   cell: 2.5,
   grip: 0.7,
+  settle: 0.96,
+  settleBelow: 1.5,
 };
 
 export interface WorldOptions {
@@ -613,10 +628,11 @@ export class World {
       // it says it is going: a stack of spheres under gravity carries
       // velocity it never turns into distance, and would never rest by speed.
       const speed2 = vx[i] * vx[i] + vy[i] * vy[i] + vz[i] * vz[i];
-      if (speed2 < 1.5) {
-        vx[i] *= 0.96;
-        vy[i] *= 0.96;
-        vz[i] *= 0.96;
+      if (speed2 < this.tune.settleBelow) {
+        const k = this.tune.settle;
+        vx[i] *= k;
+        vy[i] *= k;
+        vz[i] *= k;
       }
       if (this.steps - this.opened[i] >= this.tune.sleepSteps) {
         const dx = x[i] - this.sx[i],
@@ -950,13 +966,14 @@ export class World {
     this.belt(i);
     this.pull(i);
     const { x, y, z, vx, vy, vz, wx, wy, wz, q, so } = this;
-    if (vx[i] * vx[i] + vy[i] * vy[i] + vz[i] * vz[i] < 1.5) {
-      vx[i] *= 0.96;
-      vy[i] *= 0.96;
-      vz[i] *= 0.96;
-      wx[i] *= 0.96;
-      wy[i] *= 0.96;
-      wz[i] *= 0.96;
+    if (vx[i] * vx[i] + vy[i] * vy[i] + vz[i] * vz[i] < this.tune.settleBelow) {
+      const k = this.tune.settle;
+      vx[i] *= k;
+      vy[i] *= k;
+      vz[i] *= k;
+      wx[i] *= k;
+      wy[i] *= k;
+      wz[i] *= k;
     }
     if (this.steps - this.opened[i] < this.tune.sleepSteps) return;
     const dx = x[i] - this.sx[i],

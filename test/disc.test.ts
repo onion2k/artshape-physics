@@ -608,4 +608,22 @@ describe('a disc', () => {
     run(w, 3);
     expect(w.asleep[i]).toBe(1);
   });
+
+  it('is settled by the same figures as a ball: hit slowly, it slides a little further unsettled, and less settled hard', () => {
+    const slide = (tuning: { settle?: number; settleBelow?: number }) => {
+      const w = world({ tuning: { cell: 1.2, ...tuning } });
+      const i = flat(w, 0, 0, H / 2);
+      run(w, 1);
+      w.hit(i, 1, 0, 0);
+      run(w, 2);
+      return w.x[i];
+    };
+    const unsettled = slide({ settle: 1 }),
+      settled = slide({}),
+      hard = slide({ settle: 0.5 });
+    expect(unsettled).toBeGreaterThan(settled);
+    expect(settled).toBeGreaterThan(hard);
+    // settled only below a speed it never goes under is not settled at all
+    expect(slide({ settleBelow: 0 })).toBe(unsettled);
+  });
 });

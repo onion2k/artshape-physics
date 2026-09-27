@@ -58,8 +58,9 @@ tiles, and what falls into a hole is reported through a callback.
   freed. A hole that reaches below the bottom still has what goes down it:
   the body is gone once it passes the bottom, and reported as the hole's.
 - **Chance** comes from a function the caller hands in, and the **tuning** —
-  gravity, friction, restitution, drag, the sleep window, the hash cell — is
-  a record with a coin-sized world as its defaults.
+  gravity, friction, restitution, drag, the settling of what is slow, the
+  sleep window, the hash cell — is a record with a coin-sized world as its
+  defaults.
 
 ## Using it
 
