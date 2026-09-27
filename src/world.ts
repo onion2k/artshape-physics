@@ -218,6 +218,23 @@ export interface Pusher {
   py: number;
   /** Whose box it is: 0 the player, then the robo-dozers. Each has its own load count. */
   owner: number;
+  /**
+   * How much of a ball's speed into it, taken from the box's own at the
+   * point struck, the ball keeps going back out: 0 unless given, a blade that
+   * only shoves. The ball's kind's bounce scales it, and nothing met slower
+   * than the tuning's bounceFrom bounces. A disc does not bounce.
+   */
+  restitution?: number;
+  /**
+   * How much of the way toward the face's own speed a ball touching it is
+   * brought each step: 0.15 unless given, which is how a blade carries its
+   * load and a platform what rests on it, and how a ball glancing off a still
+   * box is slowed along it. A box that bounces brings only the speed along
+   * its face: across it, the bounce says how fast a ball leaves, and a ball
+   * leaving is not drawn back, as it would be where the box, moved a frame
+   * at a time, catches up with it between steps.
+   */
+  carry?: number;
 }
 
 /** A pusher as it stands this step: swept back by the lag, with its turn worked out once. */
@@ -1487,15 +1504,30 @@ export class World {
       pvy = p.vy + p.spin * ox;
     const vn = vx[i] * wnx + vy[i] * wny + vz[i] * wnz;
     const pvn = pvx * wnx + pvy * wny;
+    const restitution = p.restitution ?? 0,
+      bounces = restitution > 0;
     if (vn < pvn) {
-      const j = pvn - vn;
+      // taken from the box's speed where it struck, so a blade coming on throws what it meets
+      const closing = pvn - vn;
+      const e = bounces && closing > this.tune.bounceFrom ? restitution * this.kindBounce[this.kind[i]] : 0;
+      const j = (1 + e) * closing;
       vx[i] += wnx * j;
       vy[i] += wny * j;
       vz[i] += wnz * j;
     }
     // dragged along with the face a little, which is how a blade carries a load, and a platform what rests on it
-    vx[i] += (pvx - vx[i]) * 0.15;
-    vy[i] += (pvy - vy[i]) * 0.15;
+    const carry = p.carry ?? 0.15;
+    if (bounces) {
+      // along the face only: across it, the bounce has said how fast the ball leaves
+      const tx = pvx - vx[i],
+        ty = pvy - vy[i];
+      const across = tx * wnx + ty * wny;
+      vx[i] += (tx - across * wnx) * carry;
+      vy[i] += (ty - across * wny) * carry;
+    } else {
+      vx[i] += (pvx - vx[i]) * carry;
+      vy[i] += (pvy - vy[i]) * carry;
+    }
     if (Math.abs(wnz) < 0.5) this.loadNow[p.owner] = (this.loadNow[p.owner] ?? 0) + 1;
     // on top of the box is a floor: it lies flat there
     else if (wnz > 0.5) this.onFloor[i] |= 2;

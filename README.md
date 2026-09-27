@@ -38,7 +38,13 @@ tiles, and what falls into a hole is reported through a callback.
 - **Pushers** are oriented boxes that move through the bodies and shove them —
   a blade, a hull — swept across the step from where they were, so a fast box
   at a slow frame rate does not jump past what it should have hit. Each has an
-  owner, and the world counts what each owner is pushing.
+  owner, and the world counts what each owner is pushing. A box given a
+  `restitution` bounces a ball off it, by the speed they meet at, the box's
+  own taken in, so a blade coming on throws what it strikes. Its `carry`
+  (0.15 unless given) is how much of the way toward the face's own speed a
+  ball touching it is brought each step: how a blade carries its load, and
+  how a ball glancing off a still box is slowed along it. A box that bounces
+  carries along its face only.
 - **Belts** carry what rests on them. A **magnet** pulls what lies near a
   point.
 - **The rock** is a grid of solid tiles the caller owns and may rewrite in

@@ -481,7 +481,12 @@ velocity at the point of contact, spin included:
 `v += n · (1 + e·bounce[kind]) · (pvn − vn)` when `vn < pvn`. With `e = 0`
 that is today's formula exactly. `carry` makes today's 15% face drag a
 figure a game can set: a windmill blade can grip, a barrier can let the
-ball glance.
+ball glance. (As built: carry brought the whole of a ball's speed toward
+the face's, so a ball bounced at 0.8 left at 0.85 of that, 13.6 and not 16;
+and at 144 frames a second the box, moved a frame at a time, caught up with
+a ball it had just bounced, between steps, and carry drew it back, 15 to
+14.25. A box that bounces now carries along its face only. A box that does
+not, which is every box a game has now, carries as it did.)
 
 **Why per pusher:** a windmill blade and a sliding barrier are different
 obstacles. The ball's own kind still scales the figure through `bounce`,

@@ -728,4 +728,39 @@ describe('a disc', () => {
     expect(w.asleep[ball]).toBe(1);
     expect(w.z[ball]).toBeCloseTo(H + R, 1);
   });
+
+  it("is pushed by a box the same whatever the box's restitution or carry: a disc does not bounce", () => {
+    const push = (more: Partial<Pusher>) => {
+      const w = world();
+      for (let gx = 0; gx < 4; gx++) for (let gy = 0; gy < 6; gy++) flat(w, 2 + gx * 0.86, -2 + gy * 0.86, H / 2);
+      run(w, 0.5);
+      let x = -2;
+      let prev: Pusher | null = null;
+      for (let f = 0; f < 120; f++) {
+        x += 4 * DT;
+        const p: Pusher = {
+          x,
+          y: 0,
+          z: 0.5,
+          yaw: 0,
+          hx: 0.3,
+          hy: 4,
+          hz: 0.5,
+          vx: prev ? (x - prev.x) / DT : 0,
+          vy: 0,
+          spin: 0,
+          px: x,
+          py: 0,
+          owner: 0,
+          ...more,
+        };
+        w.pushers = [p];
+        w.wakeNear(x + 1, 0, 6);
+        w.step(DT, () => {});
+        prev = p;
+      }
+      return [...w.x, ...w.y, ...w.z, ...w.vx, ...w.q];
+    };
+    expect(push({ restitution: 0.9, carry: 0 })).toEqual(push({}));
+  });
 });

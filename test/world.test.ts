@@ -834,4 +834,156 @@ describe('the world', () => {
     expect(v.x[thrown]).toBeGreaterThan(STRIP + 6);
     expect(v.z[thrown]).toBeCloseTo(1, 2);
   });
+
+  /** A box across the way, 1 thick and 12 long, still unless told otherwise. */
+  const block = (x: number, more: Partial<Pusher> = {}): Pusher => ({
+    x,
+    y: 0,
+    z: 1,
+    yaw: 0,
+    hx: 0.5,
+    hy: 6,
+    hz: 1,
+    vx: 0,
+    vy: 0,
+    spin: 0,
+    px: x,
+    py: 0,
+    owner: 0,
+    ...more,
+  });
+  /** A ball sent at a still box, at 20 u/s and an angle: how fast it leaves, across the box's face and along it. */
+  const offBox = (more: Partial<Pusher>, angle = 0, tuning: Partial<Tuning> = {}) => {
+    const w = world({ holes: [], tuning: { floorDrag: 0, ...tuning } });
+    w.pushers = [block(0, more)];
+    const i = w.spawn(0, -5, 0, RADII[0], 20 * Math.cos(angle), 20 * Math.sin(angle), 0);
+    for (let f = 0; f < 60 && w.vx[i] > 0; f++) w.step(DT, () => {});
+    // a few frames more, clear of the box, for what it carried to be done
+    for (let f = 0; f < 5; f++) w.step(DT, () => {});
+    return { across: -w.vx[i], along: w.vy[i] };
+  };
+
+  it('bounces a ball off a still box by its restitution, and by nothing if it has none', () => {
+    expect(offBox({}).across).toBeCloseTo(0, 3);
+    expect(offBox({ restitution: 0.8 }).across).toBeCloseTo(16, 0);
+    expect(offBox({ restitution: 0.8, carry: 0 }).across).toBeCloseTo(16, 0);
+    // and the kind's bounce scales it, as it does every restitution
+    const w = world({ holes: [], bounce: [0.5, 1], tuning: { floorDrag: 0 } });
+    w.pushers = [block(0, { restitution: 0.8 })];
+    const i = w.spawn(0, -5, 0, RADII[0], 20, 0, 0);
+    for (let f = 0; f < 60 && w.vx[i] > 0; f++) w.step(DT, () => {});
+    expect(-w.vx[i]).toBeCloseTo(8, 0);
+  });
+
+  it('stops a ball against a bouncing box that it meets slower than bounceFrom', () => {
+    // settling off, so a ball bounced off at 1.2 u/s is not also settled
+    const slow = (bounceFrom: number) => {
+      const w = world({ holes: [], tuning: { floorDrag: 0, settle: 1, bounceFrom } });
+      w.pushers = [block(0, { restitution: 0.8 })];
+      const i = w.spawn(0, -1.2, 0, RADII[0], 1.5, 0, 0);
+      for (let f = 0; f < 60 && w.vx[i] > 0; f++) w.step(DT, () => {});
+      return -w.vx[i];
+    };
+    expect(slow(0)).toBeCloseTo(1.2, 1);
+    expect(slow(2)).toBeCloseTo(0, 3);
+  });
+
+  it('lets a ball glance off a still box keeping its speed along the face with carry at 0, and drags it with the default', () => {
+    const slant = Math.PI / 6;
+    // at 30 degrees off square: 20 sin 30 = 10 along the face
+    expect(offBox({ carry: 0 }, slant).along).toBeCloseTo(10, 1);
+    expect(offBox({}, slant).along).toBeLessThan(9);
+    // bounced, it is carried along the face only, and leaves across it as fast as the bounce says
+    const bounced = offBox({ restitution: 0.5 }, slant);
+    expect(bounced.across).toBeCloseTo(0.5 * 20 * Math.cos(slant), 0);
+    expect(bounced.along).toBeLessThan(10);
+  });
+
+  it('knocks a ball at rest off a moving box at its speed and its restitution again, at any frame length', () => {
+    for (const dt of [1 / 30, 1 / 60, 1 / 144]) {
+      for (const [restitution, leaves] of [
+        [0, 10],
+        [0.5, 15],
+      ]) {
+        const w = world({ holes: [], tuning: { floorDrag: 0 } });
+        const i = w.spawn(0, 2, 0, RADII[0]);
+        let x = -1;
+        for (let f = 0; f < 0.6 / dt; f++) {
+          x += 10 * dt;
+          w.pushers = [block(x, { vx: 10, px: x, restitution })];
+          w.step(dt, () => {});
+        }
+        expect(w.vx[i], `restitution ${restitution} at ${Math.round(1 / dt)} fps`).toBeCloseTo(leaves, 0);
+      }
+    }
+  });
+
+  it('bounces off a turning blade by the speed of the blade where it struck, and its restitution', () => {
+    // a blade 8 long from a pivot at the origin, turning at 2 rad/s; balls in its way at 2.5 and 5 out
+    const strike = (restitution: number) => {
+      const w = world({ holes: [], radii: [0.42, 0.42], tuning: { floorDrag: 0 } });
+      const at = Math.PI / 6;
+      const near = w.spawn(0, 2.5 * Math.cos(at), 2.5 * Math.sin(at), 0.42),
+        far = w.spawn(0, 5 * Math.cos(at), 5 * Math.sin(at), 0.42);
+      for (let f = 0; f < 30; f++) {
+        const a = 2 * f * DT;
+        w.pushers = [
+          {
+            x: 4 * Math.cos(a),
+            y: 4 * Math.sin(a),
+            z: 1,
+            yaw: a,
+            hx: 4,
+            hy: 0.25,
+            hz: 1,
+            vx: 0,
+            vy: 0,
+            spin: 2,
+            px: 0,
+            py: 0,
+            owner: 0,
+            restitution,
+          },
+        ];
+        w.step(DT, () => {});
+      }
+      return [Math.hypot(w.vx[near], w.vy[near]), Math.hypot(w.vx[far], w.vy[far])];
+    };
+    const [near, far] = strike(0.5);
+    expect(far / near).toBeCloseTo(2, 0);
+    // the blade moves at 2 × 5 = 10 where it meets the far ball, and at 0.5 sends it off at 15
+    expect(far).toBeGreaterThan(13);
+    expect(far).toBeLessThan(16);
+    expect(strike(0)[1]).toBeLessThan(11);
+  });
+
+  it('lets a ball rest on the top of a bouncing box, carried and asleep, given bounceFrom', () => {
+    const w = world({ holes: [], tuning: { bounceFrom: 2, sleepInAir: false } });
+    const top = (x: number, vx: number): Pusher => ({ ...block(x, { vx, restitution: 0.8 }), hx: 6, y: 20, py: 20 });
+    w.pushers = [top(0, 0)];
+    const i = w.spawn(0, 0, 20, 6);
+    for (let f = 0; f < 240; f++) w.step(DT, () => {});
+    expect(w.asleep[i]).toBe(1);
+    expect(w.z[i]).toBeCloseTo(2 + RADII[0], 1);
+    let x = 0;
+    for (let f = 0; f < 120; f++) {
+      x += 5 * DT;
+      w.pushers = [top(x, 5)];
+      w.step(DT, () => {});
+    }
+    expect(w.x[i]).toBeGreaterThan(x - 2);
+    expect(w.z[i]).toBeCloseTo(2 + RADII[0], 1);
+  });
+
+  it('counts the same load on a bouncing box as on a dead one', () => {
+    const load = (restitution: number) => {
+      const w = world({ holes: [] });
+      for (let k = 0; k < 20; k++) w.spawn(0, 3 + (k % 5) * 0.9, -2 + Math.floor(k / 5) * 0.9, RADII[0]);
+      for (let f = 0; f < 60; f++) w.step(DT, () => {});
+      w.pushers = [block(1.5, { vx: 0.001, restitution })];
+      w.step(DT, () => {});
+      return w.load;
+    };
+    expect(load(0.8)).toBe(load(0));
+  });
 });
