@@ -61,12 +61,13 @@ The gates, one by one:
   played at random from 24 seeds on a course with everything ooergolf asks
   for, hills among it (a mound, a hollow, a bank as steep as terrain may
   be, a green falling away across the way to the cup, and the cup on the
-  flank of a cone as steep as terrain may be, its rim leaning with it),
-  each seed twice, each body on its own sleep window and judged together,
-  and after every step: the ball's middle never under the ground or in a
-  wall, never more than a tenth into a box or a post, nor into the cup's
-  rim, looked at all round, nor into the terrain on its own step of the
-  floor, never sped up but by gravity or a bumper or a moving
+  flank of a cone as steep as terrain may be, its rim leaning with it), a
+  stair of risers lower than the ball as ooergolf's, and the steps' edges
+  met (`stepEdges`), each seed twice, each body on its own sleep window and
+  judged together, and after every step: the ball's middle never under the
+  ground or in a wall, never more than a tenth into a box or a post, nor
+  into the cup's rim, looked at all round, nor into the ground, every
+  step's top and the terrain on it, never sped up but by gravity or a bumper or a moving
   box, never put to sleep going faster than its `sleepSpeed`, reported at
   most once, every shot ended within 30 s, and none asleep sooner than its
   window lets it: a whole window after it was struck, or judged together,
@@ -79,9 +80,8 @@ The gates, one by one:
   wall with less than a ball's width between: the ball is in one or the
   other, and the rock, looked at last, wins. Nor is a moving box to stand
   on a slope, where a ball rolled back against it each time it gets ahead
-  is carried round for good. A ball has no top edge of a step to meet, and
-  one flown just over a step overlaps its edge by up to two thirds of a
-  unit; the rule of the terrain is kept to the ball's own step for that.
+  is carried round for good. Without the edges, 24 rounds in 48 put a ball
+  more than a tenth into a step's edge.
 - **Unchanged:** `test/unchanged.test.ts`, among the tests. Six scenes run
   from seeds with no new option set, every body's state hashed at frames
   60, 300 and 600, and held bit for bit to `test/unchanged.json`, written at
@@ -233,6 +233,11 @@ applies:
   it as flat at 0, and the hash clamps to its edge cells.
 - **Floor heights:** on a raised tile, at a step face from below, at an edge
   from above, and a hole or other thing standing on a tile that is not at 0.
+  With `stepEdges`, a ball meets the top edge of every step up from where it
+  is: in flight over one, rolling off a ledge, climbing a riser lower than
+  itself, along a run of raised tiles and at a corner that stands out, on
+  terrain, at rest against one, down a hole beside one, and over the
+  grass's edge into water; and a coin meets none, as it meets a lip.
 - **Terrain:** on a slope its surface holds, one a twentieth steeper, and
   one only its drag holds; rolling down, breaking across, up and back,
   landing on it; never a wall, a step on it still one, judged from the
@@ -269,15 +274,15 @@ applies:
 
 ## Gates and baselines
 
-| Gate      | Holds the package to                                                                | Baseline and tolerance                                                                                                                |
-| --------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| Format    | prettier's formatting                                                               | none: pass or fail                                                                                                                    |
-| Types     | strict TypeScript                                                                   | none: pass or fail                                                                                                                    |
-| Lint      | the type-aware rules                                                                | none: pass or fail                                                                                                                    |
-| Tests     | every behaviour the README claims                                                   | 189 at v0.7.0 (178 at v0.6.0, 143 at v0.5.1, 142 at v0.5.0, 131 at v0.4.3, 127 at v0.4.2, 123 at v0.4.1, 120 at v0.4.0, 30 at v0.3.0) |
-| Unchanged | every game's world as v0.3.0 stepped it, and terrain round level cups as v0.6.0 did | `test/unchanged.json`, bit for bit                                                                                                    |
-| Fuzzer    | the rules a golf ball keeps, struck at random                                       | 24 seeds of 12 shots, each both ways, every rule on every step                                                                        |
-| Bench     | what a frame costs, in five scenes                                                  | `scripts/bench-baseline.json`, ±20% both ways, 0.0002 ms slack                                                                        |
+| Gate      | Holds the package to                                                                | Baseline and tolerance                                                                                                                                                 |
+| --------- | ----------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Format    | prettier's formatting                                                               | none: pass or fail                                                                                                                                                     |
+| Types     | strict TypeScript                                                                   | none: pass or fail                                                                                                                                                     |
+| Lint      | the type-aware rules                                                                | none: pass or fail                                                                                                                                                     |
+| Tests     | every behaviour the README claims                                                   | 199 with step edges, unreleased (189 at v0.7.0, 178 at v0.6.0, 143 at v0.5.1, 142 at v0.5.0, 131 at v0.4.3, 127 at v0.4.2, 123 at v0.4.1, 120 at v0.4.0, 30 at v0.3.0) |
+| Unchanged | every game's world as v0.3.0 stepped it, and terrain round level cups as v0.6.0 did | `test/unchanged.json`, bit for bit                                                                                                                                     |
+| Fuzzer    | the rules a golf ball keeps, struck at random                                       | 24 seeds of 12 shots, each both ways, every rule on every step                                                                                                         |
+| Bench     | what a frame costs, in five scenes                                                  | `scripts/bench-baseline.json`, ±20% both ways, 0.0002 ms slack                                                                                                         |
 
 The bench's budgets, in milliseconds a frame on the fastest run, and its
 baselines as written (on an M4 Pro, Node 23.4.0):
@@ -287,7 +292,7 @@ baselines as written (on an M4 Pro, Node 23.4.0):
 | a heap of 2000 balls churned by two pushers          | pushminer             | 3      | 1.65     |
 | a bed of 1500 discs, timed while the pusher is in it | coinpush              | 4      | 1.24     |
 | one ball shot round a golf course                    | ooergolf              | 0.1    | 0.0019   |
-| 64 balls on that course at 120 u/s                   | ooergolf, at capacity | 1      | 0.058    |
+| 64 balls on that course at 120 u/s                   | ooergolf, at capacity | 1      | 0.074    |
 | a heap of 2000 balls at rest, judged together        | pushminer, at rest    | 0.01   | 0.0006   |
 
 The tolerance is the measured wobble with room to spare: over three runs
@@ -301,7 +306,12 @@ course with its terrain flat at nothing measured. They were written again
 when a cup's rim could lean and the course's cup was put on a slope: the
 round is timed over 3600 frames, since its twelve shots take 3520 now,
 and 64 balls end with 58 awake where they ended with 60, at a cost within
-the wobble of what it was.
+the wobble of what it was. They were written again when the course was
+given a raised wall, a stair of four risers and the steps' edges: the round
+takes 3120 frames of its 3600, and 64 balls cost 0.074 ms a frame where
+they cost 0.058, 0.008 of it the steps themselves, whose heights the rock's
+pass now reads, and 0.009 the edges, as the course with its steps and no
+edges measured.
 
 ## Releasing
 

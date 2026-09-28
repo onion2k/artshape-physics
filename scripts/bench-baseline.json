@@ -14,17 +14,17 @@
     "live": 1500
   },
   "one ball shot round a golf course": {
-    "relative": 0.00012408556695335282,
-    "ms": 0.0019,
-    "ref": 15.64,
+    "relative": 0.00014045901340281115,
+    "ms": 0.0022,
+    "ref": 15.5315,
     "awake": 1,
     "live": 1
   },
   "64 balls on that course at 120 u/s": {
-    "relative": 0.0036389692195122293,
-    "ms": 0.0582,
-    "ref": 15.9867,
-    "awake": 58,
+    "relative": 0.00475109733116403,
+    "ms": 0.0737,
+    "ref": 15.5218,
+    "awake": 55,
     "live": 64
   },
   "a heap of 2000 balls at rest, judged together": {

@@ -108,6 +108,20 @@ tiles, and what falls into a hole is reported through a callback.
   rolls onto it falls and is reported as `BOTTOM`, over the water, and what
   is thrown over it lands beyond. Rock stays as tall as the world.
 
+  A ball with its middle above a step's top and its bottom not, beside it,
+  cut into the step's edge until its middle was over the step. With the
+  tuning's `stepEdges` it meets the top edge of every step up from where it
+  is: it is put out of the edge's nearest point and bounced off it as off
+  the floor. It rolls round the edge of a ledge it rolls off, clears or is
+  turned by an edge it clips in flight, and climbs a riser only with speed
+  enough to go over its edge. At ooergolf's figures that is from 14 u/s for
+  a riser of 0.4 and 25 for 0.6; one of 0.8 is met so nearly square that
+  the edge turns a ball's speed up and it hops and falls back, climbing only
+  at some speeds over 55; and a very fast ball clipping a low edge is thrown
+  high. Along a run of raised tiles the edge is one straight edge, and a
+  corner that stands out is met as a point. Left out, a ball meets no edge,
+  as it always has; a disc meets a lip either way.
+
 - **Terrain** is hills and hollows on the steps: one height a tile, at the
   tile's middle, smoothed between as a cubic B-spline. The ground it makes is
   smooth in its slope and its curve, never above or below the heights given,
@@ -298,6 +312,15 @@ up inside it held by its uphill wall, one running round its rim held awake
 by sleepSpeed, a cup cut in a raised step and a coin taken by one, a pit
 with no rim that holds what falls in, and a putt that breaks right up to
 the cup and in.
+
+The edges have tests of their own, with stepEdges set: a ball flown over a
+step two high never into its edge, one rolled off a ledge round its edge,
+risers climbed only with speed enough, one straight edge along a run of
+raised tiles and a point at a corner that stands out, an edge on a hill, a
+ball at rest against an edge on a slope too steep to hold it, none met down
+a hole, a ball over the grass's edge into the water reported once, one
+driven up a riser by a box, and a world of coins the same with edges or
+without.
 
 Six scenes, run from seeds, hold the world bit for bit to how v0.3.0 stepped
 it, so a game that has not asked for anything new gets nothing new, and a

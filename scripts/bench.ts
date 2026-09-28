@@ -336,15 +336,16 @@ function machine(seed: number) {
  * the game has chosen. On it are what it has so far of the obstacles the
  * design asks for: a wall of rock one tile thick across part of it, a
  * sliding barrier, a windmill of four thin blades, eight bumpers that
- * bounce at 1.3, a bunker of sand on a green, hills, and a cup, caught by
- * its rim alone. A ball holed is put down again, on the tee or somewhere
- * clear.
+ * bounce at 1.3, a bunker of sand on a green, hills, a raised wall and a
+ * stair whose edges a ball meets, and a cup, caught by its rim alone. A ball
+ * holed is put down again, on the tee or somewhere clear.
  */
 const COURSE = {
   grid: { cols: 24, rows: 24, originX: -36, originY: -36, tile: 3 } satisfies Grid,
   radii: [1],
-  // the roll the game has chosen, fast balls in pieces, and walls banked off as one flat wall, as the game has them
-  tuning: { floorDrag: 0.8, travel: 0.5, smoothWalls: true },
+  // the roll the game has chosen, fast balls in pieces, walls banked off as one flat wall, as the game has them, and the
+  // steps' edges met
+  tuning: { floorDrag: 0.8, travel: 0.5, smoothWalls: true, stepEdges: true },
   /** The green, at the drag the game has chosen, and sand ten times as heavy. */
   surfaces: [{ drag: 0.8 }, { drag: 8 }] satisfies Surface[],
   /** A bunker three tiles by three, across the way straight up from the tee. */
@@ -360,6 +361,12 @@ const COURSE = {
     2.5 * Math.max(0, 1 - Math.hypot(tx - 4, ty - 20) / 3) +
     (tx >= 16 && tx <= 22 && ty >= 17 && ty <= 22 ? 0.4 * (ty - 19.5) * (tx === 16 || tx === 22 ? 0.5 : 1) : 0) +
     (tx >= 9 && tx <= 15 && ty >= 13 && ty <= 15 ? 0.4 * (tx - 12) * (ty === 13 ? 0.5 : 1) : 0),
+  /**
+   * The floor's steps: a raised wall two high on the east side, clear of the barrier's path by more than a ball, and
+   * a stair of four risers each four tenths high, as ooergolf's, up against the wall of rock in the west.
+   */
+  floor: (tx: number, ty: number) =>
+    tx === 22 && ty >= 8 && ty <= 12 ? 2 : tx >= 1 && tx <= 3 && ty >= 12 && ty <= 15 ? 0.4 * (ty - 11) : 0,
   /** The wall: one row of rock tiles from the west border to the middle, leaving the east side open. */
   wall: { row: 16, to: 13 },
   /** The barrier: a bar a quarter of a unit half-thick, going to and fro along x across the way up the open side. */
@@ -400,6 +407,9 @@ function course(seed: number) {
     solid,
     radii: COURSE.radii,
     holes: [COURSE.cup],
+    floor: Float32Array.from({ length: grid.cols * grid.rows }, (_, t) =>
+      COURSE.floor(t % grid.cols, Math.floor(t / grid.cols)),
+    ),
     terrain: Float32Array.from({ length: grid.cols * grid.rows }, (_, t) =>
       COURSE.terrain(t % grid.cols, Math.floor(t / grid.cols)),
     ),
@@ -477,10 +487,11 @@ function course(seed: number) {
 /**
  * One ball shot round the course: at each speed in turn, in each direction,
  * each shot taken from where the last came to rest, as a round is played.
- * The twelve take 3520 frames with the cup's green leaning, 2800 with it
- * level and hills elsewhere, 2420 before the hills with the bumpers, the
- * bunker, the pieces and the smooth walls, and 2240 before any of those, so
- * the timing, at 3600, runs a little way into the first again.
+ * The twelve take 3120 frames with the raised wall, the stair and their
+ * edges on the course, 3520 before them with the cup's green leaning, 2800
+ * with it level and hills elsewhere, 2420 before the hills with the
+ * bumpers, the bunker, the pieces and the smooth walls, and 2240 before any
+ * of those, so the timing, at 3600, runs a little way into the first again.
  */
 function round(seed: number) {
   const { world, step } = course(seed);

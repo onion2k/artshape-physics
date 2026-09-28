@@ -2,8 +2,9 @@
  * A round of golf played at random, and the rules a ball keeps however it is
  * struck. The package has no page for a fuzzer to play, so this is its
  * fuzzer: a course with every thing a golf course asks of the world (rock,
- * a raised wall, sand, water, hills and a hollow, a green that falls away
- * across the way to the cup, a sliding barrier, a windmill, bumpers and a cup), a
+ * a raised wall, a stair, sand, water, hills and a hollow, a green that falls
+ * away across the way to the cup, a sliding barrier, a windmill, bumpers and a
+ * cup, and the steps' edges met), a
  * ball shot from where it last came to rest in a direction and at a speed
  * from a seed, up to the 120 u/s the package is to hold at, and every fixed
  * step looked at. Each seed is played twice, each body on a window of its
@@ -50,6 +51,7 @@ const TUNING: Partial<Tuning> = {
   bounceFrom: 2,
   wallRestitution: 0.8,
   restitution: 0.3,
+  stepEdges: true,
 };
 const SURFACES: Surface[] = [{ drag: 0.5, roll: 8 }, { drag: 8 }];
 const BUMPERS: Bumper[] = [
@@ -73,8 +75,9 @@ function seeded(seed: number): () => number {
 const tile = (tx: number, ty: number) => ty * GRID.cols + tx;
 
 /**
- * The course: a border of rock, a wall of rock, a raised wall, water below
- * the bottom, a bunker, and terrain: a mound three high beyond the wall of
+ * The course: a border of rock, a wall of rock, a raised wall, a stair of
+ * four risers each lower than the ball, as ooergolf's, water below the
+ * bottom, a bunker, and terrain: a mound three high beyond the wall of
  * rock, by the water, a hollow two and a half deep in the far corner, a bank
  * as steep as terrain may be in the corner by the tee, the green before the
  * cup falling away across the way to it, with a post standing on the fall,
@@ -107,6 +110,8 @@ function course() {
       if (tx === 18 && ty >= 4 && ty <= 9) floor[t] = 2;
       if (tx >= 5 && tx <= 7 && ty >= 18 && ty <= 20) floor[t] = -30;
       if (tx >= 10 && tx <= 12 && ty >= 6 && ty <= 8) surface[t] = 1;
+      // a stair of risers four tenths high, as ooergolf's, up against the wall of rock, clear of the windmill
+      if (tx >= 1 && tx <= 3 && ty >= 12 && ty <= 15) floor[t] = 0.4 * (ty - 11);
       const mound = 3 * Math.max(0, 1 - Math.hypot(tx - 10, ty - 20) / 3),
         hollow = -2.5 * Math.max(0, 1 - Math.hypot(tx - 21, ty - 4) / 3),
         across = tx >= 15 && tx <= 21 ? 0.4 * (tx - 18) * (ty === 14 ? 1 : ty === 13 || ty === 15 ? 0.5 : 0) : 0,
@@ -120,37 +125,27 @@ function course() {
 }
 
 /**
- * How far a ball is into the terrain at the deepest, found by looking at the
+ * How far a ball is into the ground at the deepest, found by looking at the
  * ground all round under it, and not by the world's own reckoning: its
  * radius, less how near its middle comes to any point of the ground within
- * its reach, on the same step of the floor as its middle. It never says
- * further in than it is.
- *
- * A step's faces and edges are the rock's and the steps' to answer for, not
- * the terrain's. A ball has no top edge of a step to meet: one flown just
- * over a step two high, with no terrain anywhere, overlaps its edge by up to
- * two thirds of a unit before its middle is over the step and it is put on
- * top. That was so before there was terrain, and a hollow beside the raised
- * wall, whose rim throws a fast ball up to the wall's height, only finds it
- * more often.
+ * its reach, every step's top and the terrain on it. It never says further
+ * in than it is. A step's face is kept a radius off by the rock's pass, and
+ * with stepEdges its top edge by the edges', so what is found within reach
+ * of a ball beside a step is its top. Without the edges, one flown just over
+ * a step two high overlapped its edge by up to two thirds of a unit, and 24
+ * seeds in 200 put a ball more than a tenth into one.
  */
-function intoGround(w: World, i: number, floor: Float32Array): number {
+function intoGround(w: World, i: number): number {
   const x = w.x[i],
     y = w.y[i],
     z = w.z[i];
-  const stepOf = (px: number, py: number) =>
-    floor[tile(Math.floor((px - GRID.originX) / GRID.tile), Math.floor((py - GRID.originY) / GRID.tile))];
-  const own = stepOf(x, y);
   let nearest = Infinity;
   for (let ring = 0; ring <= 6; ring++) {
     const d = (ring / 6) * R,
       n = ring === 0 ? 1 : 16;
     for (let k = 0; k < n; k++) {
       const a = (k / n) * 2 * Math.PI;
-      const px = x + d * Math.cos(a),
-        py = y + d * Math.sin(a);
-      if (stepOf(px, py) !== own) continue;
-      nearest = Math.min(nearest, Math.hypot(d, w.floorAt(px, py) - z));
+      nearest = Math.min(nearest, Math.hypot(d, w.floorAt(x + d * Math.cos(a), y + d * Math.sin(a)) - z));
     }
   }
   return R - nearest;
@@ -307,7 +302,7 @@ function play(seed: number, sleepTogether: boolean): string | null {
       }
       // the ground, where the ball is near it and not over the cup
       if (Math.hypot(x - CUP.x, y - CUP.y) > CUP.radius + R && z - w.floorAt(x, y) < 3 * R) {
-        const into = intoGround(w, ball, floor);
+        const into = intoGround(w, ball);
         if (into > 0.1) return `${at(s)}: ${into.toFixed(3)} into the ground`;
       }
       const after = Math.hypot(w.vx[ball], w.vy[ball], w.vz[ball]);

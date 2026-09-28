@@ -205,6 +205,28 @@ export interface Tuning {
    * is one look a step, as it always was. A disc goes as it did.
    */
   travel: number;
+  /**
+   * Whether a ball meets the top edge of a step. A step is a wall to a ball
+   * whose middle is below its top and a floor to one whose middle is over
+   * it, and a ball above its top and beside it was neither: the edge cut into
+   * it until its middle was over the step, and then it was put on top. Flown
+   * just over a step two high, a ball was two thirds of a unit into its edge,
+   * one rolled off a ledge sank past it, and one rolled at a riser lower than
+   * itself was lifted onto it at any speed. With this a ball is put out of
+   * the nearest point of a step's top edge and bounced off it as off the
+   * floor: it rolls round a ledge's edge, clears or is turned by an edge it
+   * clips, and climbs a riser only with speed enough to go over its edge:
+   * at ooergolf's figures from 14 u/s for a riser of 0.4 and 25 for 0.6. One
+   * of 0.8 is met so nearly square that the edge turns a ball's speed up,
+   * and it hops and falls back, climbing only at some speeds over 55; and a
+   * very fast ball clipping a low edge is thrown high. Bounced as the step's
+   * face bounces a ball where met from the side, a riser over 0.6 could not
+   * be climbed at any speed. Along a run of raised
+   * tiles the edge is one straight edge, and a corner that stands out is met
+   * as a point. False, the default, is how it always was; a disc meets a lip
+   * either way.
+   */
+  stepEdges: boolean;
 }
 
 /**
@@ -287,6 +309,7 @@ export const DEFAULT_TUNING: Tuning = {
   sleepTogether: false,
   smoothWalls: false,
   travel: Infinity,
+  stepEdges: false,
 };
 
 export interface WorldOptions {
@@ -1789,6 +1812,73 @@ export class World {
     }
   }
 
+  /**
+   * The top edges of the steps up from the tile under a ball, each of whose
+   * tops is below its middle: a step standing above it is a wall, which the
+   * rock's pass has seen to. The ball is put out of the nearest point of the
+   * step's top, which beside the step is its edge and off its end its corner,
+   * and bounced off it as off the floor. A corner where the edge runs on
+   * along the tile beside it, as high or higher, is no corner.
+   * A ball down a pit meets none: it is below every step round it, whose
+   * edges are walls to it.
+   */
+  private edges(i: number) {
+    const { x, y, z, vx, vy, vz, r, grid } = this;
+    const heights = this.heights!,
+      solid = this.solid;
+    // its height as the steps are judged, from the terrain under it
+    const zs = this.terrain ? z[i] - this.terrainAt(x[i], y[i])[0] : z[i];
+    const tx = Math.floor((x[i] - grid.originX) / grid.tile),
+      ty = Math.floor((y[i] - grid.originY) / grid.tile);
+    if (tx < 0 || ty < 0 || tx >= grid.cols || ty >= grid.rows) return;
+    const own = heights[ty * grid.cols + tx],
+      rad = r[i];
+    for (let oy = -1; oy <= 1; oy++) {
+      for (let ox = -1; ox <= 1; ox++) {
+        if (!ox && !oy) continue;
+        const nx = tx + ox,
+          ny = ty + oy;
+        if (nx < 0 || ny < 0 || nx >= grid.cols || ny >= grid.rows) continue;
+        const t = ny * grid.cols + nx;
+        const top = heights[t];
+        if (solid[t] === 1 || top <= own || top > zs) continue;
+        if (ox && oy) {
+          const a = ty * grid.cols + nx,
+            b = ny * grid.cols + tx;
+          if (solid[a] === 1 || solid[b] === 1 || heights[a] >= top || heights[b] >= top) continue;
+        }
+        const x0 = grid.originX + nx * grid.tile,
+          y0 = grid.originY + ny * grid.tile;
+        const px = Math.max(x0, Math.min(x0 + grid.tile, x[i])),
+          py = Math.max(y0, Math.min(y0 + grid.tile, y[i]));
+        const dx = x[i] - px,
+          dy = y[i] - py;
+        if (dx * dx + dy * dy >= rad * rad) continue;
+        // the edge's height: the step, and on terrain the ground's rise where the edge is
+        const dz = z[i] - (this.terrain ? top + this.terrainAt(px, py)[0] : top);
+        const gap = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (gap >= rad || gap < 1e-9) continue;
+        const wx = dx / gap,
+          wy = dy / gap,
+          wz = dz / gap;
+        const pen = rad - gap;
+        x[i] += wx * pen;
+        y[i] += wy * pen;
+        z[i] += wz * pen;
+        const vn = vx[i] * wx + vy[i] * wy + vz[i] * wz;
+        if (vn < 0) {
+          const e = -vn > this.tune.bounceFrom ? this.tune.restitution * this.kindBounce[this.kind[i]] : 0;
+          vx[i] -= wx * vn * (1 + e);
+          vy[i] -= wy * vn * (1 + e);
+          vz[i] -= wz * vn * (1 + e);
+        }
+        // held by the edge, and so not on ground too steep to hold it, which the floor, looked at before, may have said
+        this.onFloor[i] = (this.onFloor[i] & ~STEEP) | PROPPED;
+        if (wz > 0) this.onFloor[i] |= BORNE;
+      }
+    }
+  }
+
   /** A body buried in the rock with no way back: onto the nearest open floor no higher than it, in rings out from where it is, and stopped. */
   private outOfRock(i: number) {
     const tx = Math.floor((this.x[i] - this.grid.originX) / this.grid.tile),
@@ -2115,6 +2205,11 @@ export class World {
     }
     this.walls(i);
     this.floor(i, collect, last);
+    // The steps' edges after the floor: looked at before it, an edge took the whole of a step's fall as the ball
+    // going into it, and gave it back as a shove away from the step, a ball resting against one pushed off it
+    // every few steps. The floor takes the fall, and an edge what is left; an edge pushes a ball up off it, and
+    // never into the floor.
+    if (this.tune.stepEdges && this.heights && this.alive[i]) this.edges(i);
   }
 
   /**
