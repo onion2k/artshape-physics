@@ -59,7 +59,12 @@ tiles, and what falls into a hole is reported through a callback.
   the nearest face, so nothing is pushed through a wall a tile thick. A ball
   bounces off the rock, and off a floor standing above it, by the tuning's
   `wallRestitution`; off the floor by its `restitution`; and each kind's
-  `bounce` scales every restitution it meets. A disc does not bounce.
+  `bounce` scales every restitution it meets. A disc does not bounce. A
+  wall is made of tiles, and where the next tile along begins, flush with
+  the face a ball meets, its corner used to put the ball out on a slant and
+  send it on along the wall faster than it came; with `smoothWalls` a ball
+  banks off a wall of tiles as off one flat wall, and meets a corner only
+  where one stands out.
 - **The floor has heights**, one a tile, flat unless the caller gives them.
   A body rests on the tile under it; a tile whose floor stands above a body's
   middle is a wall to it, so a step is a wall from below and an edge from

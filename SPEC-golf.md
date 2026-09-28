@@ -673,6 +673,21 @@ grip for coins could come later.
 **Performance:** one byte and a table read per floor contact. The heap
 scene should not move by more than its wobble.
 
+### 9b. A ball banks off a wall of tiles as off one flat wall (as built)
+
+Not in the spec as agreed; found by feature 10's tests, and opted into by
+the rule the rest keeps, as sleepInAir was. A wall is made of tiles, and a
+ball meeting one tile's face near where the next begins meets that tile's
+corner too, flush with the face: it is put out on a slant and sent along
+the wall faster than it came. Banking at 20 u/s and 30° off a wall of 0.8,
+it left with up to 1.82 of its speed along the wall and 0.21 across,
+depending on where along a tile it struck; at 45°, and at 5 u/s, never. It
+is so in v0.3.0. `smoothWalls` (false, as it was) makes a tile's corner no
+corner to a ball where the wall runs on past it, and a ball banks at exactly
+its figure, 10 to 40 u/s at 30, 45 and 60 degrees. A corner that stands out
+is still one. On by default it would move four scenes of the unchanged gate
+and a coin pile's test, so it is for balls, and opted into; ooergolf sets it.
+
 ### 10. A fast ball kept out of walls
 
 This is two commits.
@@ -906,22 +921,23 @@ own feature, as its DESIGN.md says.
 
 ## The order, in one place
 
-| #   | Commit                                                              | Kind        |
-| --- | ------------------------------------------------------------------- | ----------- |
-| 1   | The unchanged gate and the bench                                    | tool        |
-| 2   | `collect` says which hole                                           | feature     |
-| 3   | `hit`                                                               | feature     |
-| 4   | The slow-speed damping, tunable                                     | feature     |
-| 5   | Walls and the floor bounce by a figure, and by kind                 | feature     |
-| 5b  | A body kept from sleeping in the air, opted into (as built)         | feature     |
-| 6   | Walls with a height and water, from floor heights: tests and README | docs, tests |
-| 7   | Pushers that bounce, and `carry`                                    | feature     |
-| 8   | Bumpers                                                             | feature     |
-| 9   | Surfaces, and drag by kind                                          | feature     |
-| 10a | The sphere's contacts split from the once-a-step part               | refactor    |
-| 10b | A fast ball stepped in pieces                                       | feature     |
-| 11  | The cup                                                             | feature     |
-| 12  | README, CLAUDE.md, 0.4.0, and the games checked                     | release     |
+| #   | Commit                                                                  | Kind        |
+| --- | ----------------------------------------------------------------------- | ----------- |
+| 1   | The unchanged gate and the bench                                        | tool        |
+| 2   | `collect` says which hole                                               | feature     |
+| 3   | `hit`                                                                   | feature     |
+| 4   | The slow-speed damping, tunable                                         | feature     |
+| 5   | Walls and the floor bounce by a figure, and by kind                     | feature     |
+| 5b  | A body kept from sleeping in the air, opted into (as built)             | feature     |
+| 6   | Walls with a height and water, from floor heights: tests and README     | docs, tests |
+| 7   | Pushers that bounce, and `carry`                                        | feature     |
+| 8   | Bumpers                                                                 | feature     |
+| 9   | Surfaces, and drag by kind                                              | feature     |
+| 9b  | A ball banks off a wall of tiles as off one wall, opted into (as built) | feature     |
+| 10a | The sphere's contacts split from the once-a-step part                   | refactor    |
+| 10b | A fast ball stepped in pieces                                           | feature     |
+| 11  | The cup                                                                 | feature     |
+| 12  | README, CLAUDE.md, 0.4.0, and the games checked                         | release     |
 
 Each commit has every test green, and the unchanged gate matches bit for
 bit. The bench is run before and after each, and a figure that moves is

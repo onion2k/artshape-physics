@@ -862,4 +862,16 @@ describe('a disc', () => {
       slide({ surfaces: [{ drag: 0 }, { drag: 40, roll: 30, bounce: 0.9 }], surface: sand, drag: [3, 1] }),
     ).toEqual(slide({}));
   });
+
+  it('is put out of the rock the same with smoothWalls, which is for a ball banking', () => {
+    const bed = (smoothWalls: boolean) => {
+      const w = world({ tuning: { cell: 1.2, smoothWalls } });
+      for (let gx = 0; gx < 4; gx++) for (let gy = 0; gy < 8; gy++) flat(w, 18.5 - gx * 0.86, -3 + gy * 0.86, H / 2);
+      run(w, 0.5);
+      for (let i = 0; i < w.count; i++) w.hit(i, 6, 2, 0);
+      run(w, 2);
+      return [...w.x, ...w.y, ...w.z, ...w.q];
+    };
+    expect(bed(true)).toEqual(bed(false));
+  });
 });

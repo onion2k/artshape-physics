@@ -124,6 +124,16 @@ export interface Tuning {
    * always was: held to it, some bodies in a heap sleep a window later.
    */
   sleepInAir: boolean;
+  /**
+   * Whether a ball banks off a wall of tiles as off one flat wall. A wall is
+   * made of tiles, and a ball meeting the face of one, near where the next
+   * one along begins, meets that one's corner too, flush with the face: it is
+   * put out of it on a slant, and bounced along the wall faster than it came,
+   * as much as 1.8 times at 20 u/s. With this, a tile's corner is no corner
+   * where the wall runs on past it. False, the default, is how it always
+   * was; a disc, put out of the rock by position, meets the corners either way.
+   */
+  smoothWalls: boolean;
 }
 
 /**
@@ -178,6 +188,7 @@ export const DEFAULT_TUNING: Tuning = {
   settle: 0.96,
   settleBelow: 1.5,
   sleepInAir: true,
+  smoothWalls: false,
 };
 
 export interface WorldOptions {
@@ -1434,6 +1445,23 @@ export class World {
           )
         )
           continue;
+        // a corner of the wall's own, where it runs on past it, is no corner to a ball
+        if (ox && oy && this.tune.smoothWalls && this.h[i] === 0) {
+          const half = this.grid.tile / 2;
+          if (
+            this.wallAt(
+              this.grid.originX + nx * this.grid.tile + half,
+              this.grid.originY + ty * this.grid.tile + half,
+              zi,
+            ) ||
+            this.wallAt(
+              this.grid.originX + tx * this.grid.tile + half,
+              this.grid.originY + ny * this.grid.tile + half,
+              zi,
+            )
+          )
+            continue;
+        }
         const x0 = this.grid.originX + nx * this.grid.tile,
           y0 = this.grid.originY + ny * this.grid.tile;
         const cx = Math.max(x0, Math.min(x0 + this.grid.tile, x[i])),

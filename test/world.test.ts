@@ -1299,4 +1299,101 @@ describe('the world', () => {
       offWall({ solid: open, surfaces: zero }, 0, 0, GRID.originX + GRID.cols * GRID.tile - 10).across,
     ).toBeCloseTo(18, 0);
   });
+
+  /** A ball of radius 1 banked off a column of rock tiles, meeting it at a spread of heights along a tile. */
+  const bank = (speed: number, angle: number, e: number, smoothWalls: boolean) => {
+    const wall = solid((tx) => tx === 40);
+    const face = GRID.originX + 40 * GRID.tile;
+    const out: { along: number; across: number }[] = [];
+    for (let k = 0; k < 12; k++) {
+      const w = world({
+        holes: [],
+        solid: wall,
+        radii: [1, 1],
+        tuning: { floorDrag: 0, settle: 1, wallRestitution: e, smoothWalls },
+      });
+      const a = (angle * Math.PI) / 180,
+        vx = speed * Math.cos(a),
+        vy = speed * Math.sin(a);
+      const i = w.spawn(0, face - 1 - vx * 0.4, 0.25 * k - vy * 0.4, 1, vx, vy, 0);
+      for (let s = 0; s < 240; s++) {
+        const before = w.vx[i];
+        w.step(1 / 120, () => {});
+        if (before > 0 && w.vx[i] <= 0) {
+          out.push({ along: w.vy[i] / vy, across: -w.vx[i] / vx });
+          break;
+        }
+      }
+    }
+    return out;
+  };
+
+  it('banks a ball off a flush wall of tiles as off one flat wall with smoothWalls, where the corners between them threw it along', () => {
+    expect(DEFAULT_TUNING.smoothWalls).toBe(false);
+    // as it always was: the next tile's corner, flush with the face it meets, sends it on along the wall
+    const rough = bank(20, 30, 0.8, false);
+    expect(Math.max(...rough.map((b) => b.along))).toBeGreaterThan(1.5);
+    for (const [speed, e] of [
+      [10, 0.1],
+      [20, 0.1],
+      [20, 0.8],
+      [40, 0.8],
+    ])
+      for (const angle of [30, 45, 60])
+        for (const { along, across } of bank(speed, angle, e, true)) {
+          expect(along, `${speed} u/s at ${angle}°`).toBeCloseTo(1, 2);
+          expect(across / e, `${speed} u/s at ${angle}°`).toBeCloseTo(1, 1);
+        }
+  });
+
+  it('keeps a corner that stands out a corner with smoothWalls, and a ball out of a corner going in', () => {
+    // the end of a wall: its outer corner turns a ball that meets it, as it always did
+    const end = solid((tx, ty) => tx === 40 && ty < 20);
+    const corner = GRID.originX + 40 * GRID.tile,
+      top = GRID.originY + 20 * GRID.tile;
+    const turn = (smoothWalls: boolean) => {
+      const w = world({ holes: [], solid: end, radii: [1, 1], tuning: { floorDrag: 0, smoothWalls } });
+      // along x, half a unit clear of the end of the wall: it meets the corner and nothing else
+      const i = w.spawn(0, corner - 5, top + 0.5, 1, 10, 0, 0);
+      for (let f = 0; f < 60; f++) w.step(DT, () => {});
+      return [w.x[i], w.y[i], w.vx[i], w.vy[i]];
+    };
+    const turned = turn(true);
+    expect(turned[3]).toBeGreaterThan(1);
+    expect(turned).toEqual(turn(false));
+    // into the inside of a corner, of rock at column 40 and row 20: out of both
+    const inside = solid((tx, ty) => (tx === 40 && ty <= 20) || (ty === 20 && tx <= 40));
+    const w = world({ holes: [], solid: inside, radii: [1, 1], tuning: { floorDrag: 0, smoothWalls: true } });
+    const i = w.spawn(0, corner - 6, top - 6, 1, 30, 30, 0);
+    for (let f = 0; f < 60; f++) {
+      w.step(DT, () => {});
+      expect(inside[tileOf(w.x[i], w.y[i])], `frame ${f}`).toBe(0);
+    }
+  });
+
+  it('banks off a flush wall of raised floor tiles as off one flat wall, with smoothWalls', () => {
+    const floor = new Float32Array(GRID.cols * GRID.rows);
+    for (let ty = 0; ty < GRID.rows; ty++) floor[ty * GRID.cols + 40] = 4;
+    const face = GRID.originX + 40 * GRID.tile;
+    for (let k = 0; k < 12; k++) {
+      const w = world({
+        holes: [],
+        floor,
+        radii: [1, 1],
+        tuning: { floorDrag: 0, wallRestitution: 0.8, smoothWalls: true },
+      });
+      const vx = 20 * Math.cos(Math.PI / 6),
+        vy = 20 * Math.sin(Math.PI / 6);
+      const i = w.spawn(0, face - 1 - vx * 0.4, 0.25 * k - vy * 0.4, 1, vx, vy, 0);
+      for (let s = 0; s < 240; s++) {
+        const before = w.vx[i];
+        w.step(1 / 120, () => {});
+        if (before > 0 && w.vx[i] <= 0) {
+          expect(w.vy[i] / vy).toBeCloseTo(1, 2);
+          expect(-w.vx[i] / vx).toBeCloseTo(0.8, 2);
+          break;
+        }
+      }
+    }
+  });
 });

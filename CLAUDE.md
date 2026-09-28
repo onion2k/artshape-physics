@@ -151,6 +151,9 @@ applies:
   moves it or reports it.
 - **Discs as well as spheres:** every path has a disc branch, or says why it
   does not need one. Discs are solved by position and never bounce.
+- **Rock:** against a face, banking along a wall of several tiles (with and
+  without `smoothWalls`), at a corner that stands out, into the inside of a
+  corner, and shoved in by a box; never left in it.
 - **Off the grid:** `wallAt` treats off the grid as a wall, `floorAt` treats
   it as flat at 0, and the hash clamps to its edge cells.
 - **Floor heights:** on a raised tile, at a step face from below, at an edge
