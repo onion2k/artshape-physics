@@ -1,9 +1,11 @@
 # artshape-physics
 
 A world of spheres and of coins, for a game with a great many small things
-rolling about a floor, piling on it and being shoved. Stepped at a fixed
-rate, with sleeping, a spatial hash, and a grid of rock the bodies are kept
-out of.
+rolling about a floor, piling on it and being shoved, or with one ball
+struck about a golf course: banked off walls, bounced off posts and boxes,
+slowed by grass and sand, and dropped into a cup or run over it. Stepped at
+a fixed rate, with sleeping, a spatial hash, and a grid of rock the bodies
+are kept out of.
 
 Taken out of [Pushminer](https://github.com/onion2k/miner) in September
 2026, where it had been the physics under a few thousand coins pushed about
@@ -27,8 +29,9 @@ tiles, and what falls into a hole is reported through a callback.
   goes over a lip of the floor on the lip and not through it. A bed of them
   pushed from behind moves as a bed and buckles into a pile. It is solved by
   position, so nothing bounces, and what it costs is a few times a ball: a
-  machine of fifteen hundred with a few hundred awake is stepped in under two
-  milliseconds a frame. Drawn at its own radius, thickness and orientation,
+  bed of fifteen hundred being pushed is stepped in about 1.8 milliseconds a
+  frame with three hundred awake, and 3.2 with four hundred, and 1.24 on
+  average while the pusher is in it. Drawn at its own radius, thickness and orientation,
   a disc at rest is never more than a twentieth of a unit into another.
   `src/disc.ts` says how, and what each part of it is there to stop.
 - **Bodies sleep.** Only an awake body looks for its neighbours, and it wakes

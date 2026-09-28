@@ -933,6 +933,34 @@ heights.
 
 ### 12. The release
 
+As built. Each game was checked in a throwaway clone with its own
+node_modules, the package swapped for this one, and nothing of the game
+changed; the games' own checkouts were not touched.
+
+- **coinpush** (pins v0.3.0): the whole check green. Its pace moved from
+  its baseline, 1.57 to 1.53 minutes, and came out the same four seeds to
+  the hundredth on its own v0.3.0: the baseline is older than coinpush's
+  latest commits, and the package moves nothing.
+- **ooergolf** (pins v0.3.0): green, pace 11.19 strokes to 11.19, but for
+  the frame drawn in its perf gate, which swung from 1.6 to 2.6 ms on this
+  package and on v0.3.0 alike, over two runs of each: the GPU was shared
+  with the game's own session. Its smoke tests ran on another port in the
+  clone, since its own session held 5201. The download grew 1.7 kB over
+  v0.3.0.
+- **pushminer** (pins v0.1.0): its tests, fuzzer, determinism, leaks and
+  balance green. Its simulation and bench gates fail, and fail the same to
+  the hundredth on v0.3.0; on v0.2.0 and its own v0.1.0 they pass. v0.3.0
+  gave each body a sleep window of its own and opened a fresh one when a
+  body is woken, and pushminer wakes some of its balls every frame, so 257
+  of them never sleep in the cave at rest: 0.001 ms a frame to 0.57. That
+  is pushminer's to take up when it moves off v0.1.0, and is older than
+  this version. Its look gate fails 17 pictures in a clean clone on its own
+  v0.1.0 too, whatever the physics. Over v0.3.0, this package costs its busy
+  scenes 2 to 3%.
+
+So the release stands for the two games on v0.3.0, and does not by itself
+make pushminer's move from v0.1.0 green.
+
 **What:**
 
 - The README says what is new, with the cup table.

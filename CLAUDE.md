@@ -72,14 +72,12 @@ The gates, one by one:
   than the baseline, past a slack of a fifth of a microsecond, over a
   scene's budget, or when a scene's runs do not end alike.
 
-The README gives the cost of a coin machine ("fifteen hundred with a few
-hundred awake ... under two milliseconds a frame"). The bench's coin bed,
-profiled a third of a second at a time, bears that out for about three
-hundred awake (1.8 ms), and not for four hundred (3.2 ms). The bench times
-that scene only while the pusher is in the bed, since the frames either
-side of it cost next to nothing and halved the figure. Coinpush's own
-bench puts its whole machine at 2.35 to 2.54 ms a frame, and the README's
-figure is to say which it means.
+The README gives the cost of a coin bed as the bench measures it: about
+1.8 ms a frame with three hundred awake, 3.2 with four hundred, and 1.24 on
+average while the pusher is in it. The bench times that scene only while
+the pusher is in the bed, since the frames either side of it cost next to
+nothing and halved the figure. Coinpush's own bench puts its whole machine
+at 2.2 to 2.5 ms a frame.
 
 ## Layout
 
@@ -196,7 +194,7 @@ applies:
 | Format    | prettier's formatting                         | none: pass or fail                                             |
 | Types     | strict TypeScript                             | none: pass or fail                                             |
 | Lint      | the type-aware rules                          | none: pass or fail                                             |
-| Tests     | every behaviour the README claims             | 30 tests at v0.3.0                                             |
+| Tests     | every behaviour the README claims             | 120 tests at v0.4.0 (30 at v0.3.0)                             |
 | Unchanged | every game's world as v0.3.0 stepped it       | `test/unchanged.json`, bit for bit                             |
 | Fuzzer    | the rules a golf ball keeps, struck at random | 24 seeds of 12 shots, every rule on every step                 |
 | Bench     | what a frame costs, in four scenes            | `scripts/bench-baseline.json`, ±20% both ways, 0.0002 ms slack |
