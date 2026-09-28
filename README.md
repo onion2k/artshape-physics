@@ -151,11 +151,14 @@ tiles, and what falls into a hole is reported through a callback.
 
 - **Chance** comes from a function the caller hands in, and the **tuning** —
   gravity, friction, restitution, drag, the settling of what is slow, the
-  sleep window, whether a body may sleep in the air, the hash cell — is a
-  record with a coin-sized world as its defaults. Sleep goes by how far a
-  body has got over a window of steps, and one bouncing can be back where it
-  was by the window's end; with `sleepInAir` off, a body sleeps only once it
-  lies on something.
+  sleep window, whether a body may sleep in the air, the fastest it may be
+  going to sleep, the hash cell — is a record with a coin-sized world as its
+  defaults. Sleep goes by how far a body has got over a window of steps, and
+  one bouncing, or running round the inside of a cup's rim, can be back
+  where it was by the window's end; with `sleepInAir` off, a body sleeps
+  only once it lies on something, and a ball with a `sleepSpeed` only once it is
+  going slower than that. Without one, a golf fuzzer's ball was put to sleep
+  going at up to twelve a second in 37 rounds of 500.
 
 ## Using it
 

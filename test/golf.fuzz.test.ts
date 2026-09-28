@@ -27,10 +27,13 @@ const LONGEST = 30 / STEP;
 const R = 1;
 
 const GRID: Grid = { cols: 24, rows: 24, originX: -36, originY: -36, tile: 3 };
+/** The fastest a ball may be going and be put to sleep: well over what one at rest carries. */
+const SLEEP_SPEED = 2;
 const TUNING: Partial<Tuning> = {
   travel: 0.5,
   smoothWalls: true,
   sleepInAir: false,
+  sleepSpeed: process.env.FUZZ_NO_SLEEP_SPEED ? Infinity : SLEEP_SPEED,
   bounceFrom: 2,
   wallRestitution: 0.8,
   restitution: 0.3,
@@ -216,6 +219,9 @@ function play(seed: number): string | null {
       const after = Math.hypot(w.vx[ball], w.vy[ball], w.vz[ball]);
       if (!near.box && !near.post && after > before + 70 * STEP + 1e-3)
         return `${at(s)}: sped up from ${before.toFixed(3)} to ${after.toFixed(3)} with nothing to speed it`;
+      // asleep going as it was, as a ball running round inside the cup's rim once was: hung there for good
+      if (w.asleep[ball] && before > SLEEP_SPEED + 70 * STEP)
+        return `${at(s)}: put to sleep going ${before.toFixed(2)}`;
       if (w.asleep[ball]) break;
     }
     if (s >= LONGEST) return `${at(s)}: still going after ${LONGEST * STEP} s`;

@@ -179,6 +179,58 @@ describe('a cup', () => {
   });
 });
 
+describe('a ball running round inside a rim', () => {
+  // ooergolf's own cup, and a ball as its fuzzer found it: in the cup's mouth, held up by the rim and going round
+  // it at ten a second, a lap about as long as the sleep window, so it is back where it was each time the window closes
+  const golf = (tuning: Partial<Tuning>) =>
+    new World({
+      capacity: 4,
+      grid: GRID,
+      solid: new Uint8Array(GRID.cols * GRID.rows),
+      radii: [R],
+      holes: [{ x: 0, y: 0, radius: 1.45, depth: 6, rim: 0.3, pull: 0 }],
+      random: () => 0.5,
+      tuning: { floorDrag: 0, travel: 0.5, sleepInAir: false, smoothWalls: true, ...tuning },
+    });
+  const round = (tuning: Partial<Tuning>) => {
+    const w = golf(tuning);
+    const i = w.spawn(0, 0.125, 0.547, 0.458, -10.7, 1.14, -1.61);
+    let holed = false,
+      sleptGoing = 0;
+    for (let f = 0; f < 120 && w.alive[i]; f++) {
+      const going = Math.hypot(w.vx[i], w.vy[i], w.vz[i]);
+      w.step(DT, () => (holed = true));
+      if (w.alive[i] && w.asleep[i]) sleptGoing = Math.max(sleptGoing, going);
+    }
+    return { holed, sleptGoing };
+  };
+
+  it('is put to sleep a lap in, going as it was, when sleep is judged only by where it has got to, as it always was', () => {
+    const { holed, sleptGoing } = round({});
+    expect(holed).toBe(false);
+    expect(sleptGoing, 'asleep from about ten a second').toBeGreaterThan(5);
+  });
+
+  it('is never put to sleep going faster than sleepSpeed, and drops into the cup', () => {
+    const { holed, sleptGoing } = round({ sleepSpeed: 2 });
+    expect(sleptGoing, 'never asleep from faster than sleepSpeed').toBe(0);
+    expect(holed, 'down the cup, as it goes once it slows').toBe(true);
+  });
+
+  it('with sleepSpeed set, a ball rolled to a stop on the floor still sleeps where it lies, as soon as it did without', () => {
+    const settles = (tuning: Partial<Tuning>) => {
+      const w = golf({ ...tuning, floorDrag: 5.5 });
+      const i = w.spawn(0, -15, 8, R, 6, 0, 0);
+      for (let f = 1; f < 600; f++) {
+        w.step(DT, () => undefined);
+        if (w.asleep[i]) return { f, x: w.x[i] };
+      }
+      return { f: Infinity, x: NaN };
+    };
+    expect(settles({ sleepSpeed: 2 })).toEqual(settles({}));
+  });
+});
+
 describe('a coin and a cup', () => {
   const coins = (over: Partial<WorldOptions> = {}) =>
     new World({

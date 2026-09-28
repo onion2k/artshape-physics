@@ -16,12 +16,12 @@ A change is a change to every game that pins it. Each one must behave
 exactly as before unless it opts in to something new, so a new option
 defaults to today's behaviour, and the existing tests pass unchanged.
 
-| Game      | Pins   | Uses                                                           |
-| --------- | ------ | -------------------------------------------------------------- |
-| pushminer | v0.1.0 | balls, rock, one hole, pushers, belts, the magnet              |
-| coinpush  | v0.3.0 | discs, floor heights, the bottom, pushers                      |
-| ooergolf  | v0.1.0 | balls and rock, for now; the golf is on its way                |
-| template  | v0.1.0 | `~/projects/artshape-game-template`, what new games start from |
+| Game      | Pins   | Uses                                                                          |
+| --------- | ------ | ----------------------------------------------------------------------------- |
+| pushminer | v0.1.0 | balls, rock, one hole, pushers, belts, the magnet                             |
+| coinpush  | v0.3.0 | discs, floor heights, the bottom, pushers                                     |
+| ooergolf  | v0.4.1 | balls, rock, floor heights, surfaces, bouncing boxes, belts, a cup with a rim |
+| template  | v0.1.0 | `~/projects/artshape-game-template`, what new games start from                |
 
 arena and bearing do not use it. bearing moved to Rapier, because it
 needed slopes.
@@ -54,8 +54,10 @@ The gates, one by one:
   played at random from 24 seeds on a course with everything ooergolf asks
   for, and after every step: the ball's middle never in a wall, never more
   than a tenth into a box or a post, never sped up but by gravity or a
-  bumper or a moving box, reported at most once, and every shot ended
-  within 30 s. `FUZZ_SEEDS=1-500 npx vitest run test/golf.fuzz.test.ts` for
+  bumper or a moving box, never put to sleep going faster than its
+  `sleepSpeed`, reported at most once, and every shot ended within 30 s.
+  With `FUZZ_NO_SLEEP_SPEED=1` it plays without the option, and 37 of 500
+  seeds put a ball to sleep going at 3 to 12 a second. `FUZZ_SEEDS=1-500 npx vitest run test/golf.fuzz.test.ts` for
   more; a failure names its seed, shot and step. A course is not to drive a
   box against a wall with less than a ball's width between: the ball is in
   one or the other, and the rock, looked at last, wins.
@@ -153,7 +155,9 @@ applies:
   against it and sleep. Nothing new costs anything for a sleeper that is
   not touched. A thing that can hold a body up marks it `BORNE` when it
   touches it below its middle, or with `sleepInAir` off a body resting on
-  it never sleeps.
+  it never sleeps. A body that can come back round to where it was in a
+  sleep window, running round a rim or between two things, is held awake by
+  `sleepSpeed`, and needs a test that it is.
 - **Carried:** a body with `carried[i]` set is not stepped, and nothing new
   moves it or reports it.
 - **Discs as well as spheres:** every path has a disc branch, or says why it
@@ -194,7 +198,7 @@ applies:
 | Format    | prettier's formatting                         | none: pass or fail                                             |
 | Types     | strict TypeScript                             | none: pass or fail                                             |
 | Lint      | the type-aware rules                          | none: pass or fail                                             |
-| Tests     | every behaviour the README claims             | 120 tests at v0.4.0 (30 at v0.3.0)                             |
+| Tests     | every behaviour the README claims             | 123 tests at v0.4.1 (120 at v0.4.0, 30 at v0.3.0)              |
 | Unchanged | every game's world as v0.3.0 stepped it       | `test/unchanged.json`, bit for bit                             |
 | Fuzzer    | the rules a golf ball keeps, struck at random | 24 seeds of 12 shots, every rule on every step                 |
 | Bench     | what a frame costs, in four scenes            | `scripts/bench-baseline.json`, ±20% both ways, 0.0002 ms slack |

@@ -138,6 +138,20 @@ export interface Tuning {
    */
   sleepInAir: boolean;
   /**
+   * The fastest a body may be going and be put to sleep. Sleep is judged by
+   * how far a body is from where it was a window of steps before, and a ball
+   * running round the inside of a cup's rim, held up by it, can come all the
+   * way round in a window: ooergolf's fuzzer found one put to sleep there
+   * going at ten a second, hung in the mouth of the cup for good, which left
+   * awake drops in two thirds of a second. A stack under gravity carries
+   * speed it never turns into distance, so this is a ceiling well above what
+   * a body at rest carries, not a test of rest. Infinity, the default, is how
+   * it always was. A ball only: a disc never bounces or meets a rim, and the
+   * coins found put to sleep coming down fast had landed in that very step,
+   * which stops them, and lay at rest where they slept.
+   */
+  sleepSpeed: number;
+  /**
    * Whether a ball banks off a wall of tiles as off one flat wall. A wall is
    * made of tiles, and a ball meeting the face of one, near where the next
    * one along begins, meets that one's corner too, flush with the face: it is
@@ -217,6 +231,7 @@ export const DEFAULT_TUNING: Tuning = {
   settle: 0.96,
   settleBelow: 1.5,
   sleepInAir: true,
+  sleepSpeed: Infinity,
   smoothWalls: false,
   travel: Infinity,
 };
@@ -811,7 +826,8 @@ export class World {
           dz = z[i] - this.sz[i];
         if (
           dx * dx + dy * dy + dz * dz < this.tune.sleepDrift * this.tune.sleepDrift &&
-          (this.tune.sleepInAir || this.onFloor[i] & BORNE)
+          (this.tune.sleepInAir || this.onFloor[i] & BORNE) &&
+          speed2 < this.tune.sleepSpeed * this.tune.sleepSpeed
         ) {
           asleep[i] = 1;
           vx[i] = vy[i] = vz[i] = 0;
