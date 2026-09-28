@@ -730,14 +730,7 @@ export class World {
         this.stepDisc(i, collect);
         continue;
       }
-      this.push(i);
-      // most worlds have no posts, and a heap of their balls is not made to ask of each one
-      if (this.bumpers.length) this.bump(i);
-      this.belt(i);
-      this.pull(i);
-      // the rock last, after everything else that moves it, so nothing is left in it
-      this.walls(i);
-      this.floor(i, collect);
+      this.contacts(i, collect, true);
       if (!alive[i]) continue;
       // A slow body is slowed further, which takes the fizz out of a
       // settling heap. Sleep is judged on where it has got to, not how fast
@@ -1759,7 +1752,28 @@ export class World {
     vy[i] += b.dx * -across * 0.6 * k;
   }
 
-  private floor(i: number, collect: Collect) {
+  /**
+   * What a ball meets where it has got to: the boxes, the posts, the rock and
+   * the floor, and the holes and the bottom it may leave the world by. The
+   * rock is last but for the floor, after everything else that moves it
+   * across, so nothing is left in it. `last` is whether this is the last look
+   * of the step: the belts and the magnet act, and the floor drags and slopes
+   * toward a hole, once a step, whatever looks it takes.
+   */
+  private contacts(i: number, collect: Collect, last: boolean) {
+    this.push(i);
+    // most worlds have no posts, and a heap of their balls is not made to ask of each one
+    if (this.bumpers.length) this.bump(i);
+    if (last) {
+      this.belt(i);
+      this.pull(i);
+    }
+    this.walls(i);
+    this.floor(i, collect, last);
+  }
+
+  /** The floor under a ball, and the holes and bottom: caught and bounced every look, dragged on the last. */
+  private floor(i: number, collect: Collect, last: boolean) {
     const { x, y, z, vx, vy, vz, r } = this;
     const step = this.tune.step;
     // the nearest hole, for the floor's slope toward it; and any it is over, which it falls into
@@ -1811,6 +1825,8 @@ export class World {
       z[i] = fz + r[i];
       if (vz[i] < -this.tune.bounceFrom) vz[i] = -vz[i] * this.tune.restitution * this.kindBounce[this.kind[i]];
       else if (vz[i] < 0) vz[i] = 0;
+      this.onFloor[i] |= 1 | BORNE;
+      if (!last) return;
       // the surface of the tile under its middle, the kind scaling it
       const under = this.surfaces.length
           ? this.surfaceOf(
@@ -1829,7 +1845,6 @@ export class World {
         vx[i] *= keep;
         vy[i] *= keep;
       }
-      this.onFloor[i] |= 1 | BORNE;
       // a body near a rim tips in: the floor slopes to the hole a little
       if (near && nd < near.radius + 2.5) {
         vx[i] -= (ndx / nd) * 6 * step;
