@@ -5,8 +5,10 @@
  * a raised wall, sand, water, a sliding barrier, a windmill, bumpers and a cup), a
  * ball shot from where it last came to rest in a direction and at a speed
  * from a seed, up to the 120 u/s the package is to hold at, and every fixed
- * step looked at. A test of one thing holds that thing; this finds what two
- * of them do together that neither's test thought of.
+ * step looked at. Each seed is played twice, each body on a window of its
+ * own and judged together, since a game may have either. A test of one thing
+ * holds that thing; this finds what two of them do together that neither's
+ * test thought of.
  *
  *   FUZZ_SEEDS=1-500 npx vitest run test/golf.fuzz.test.ts    more seeds than the check's twenty-four
  *
@@ -14,7 +16,17 @@
  * it again.
  */
 import { describe, expect, it } from 'vitest';
-import { BOTTOM, World, type Bumper, type Grid, type Hole, type Pusher, type Surface, type Tuning } from '../src/world';
+import {
+  BOTTOM,
+  DEFAULT_TUNING,
+  World,
+  type Bumper,
+  type Grid,
+  type Hole,
+  type Pusher,
+  type Surface,
+  type Tuning,
+} from '../src/world';
 
 const SEEDS = ((spec: string) => {
   const [a, b] = spec.split('-').map(Number);
@@ -149,7 +161,7 @@ function intoPost(b: Bumper, x: number, y: number, z: number): number {
   return R - (d - b.radius > -dz ? d - b.radius : Math.max(d - b.radius, dz));
 }
 
-function play(seed: number): string | null {
+function play(seed: number, sleepTogether: boolean): string | null {
   const random = seeded(seed);
   const { solid, floor, surface } = course();
   const w = new World({
@@ -163,8 +175,11 @@ function play(seed: number): string | null {
     radii: [R],
     holes: [CUP],
     random,
-    tuning: TUNING,
+    tuning: { ...TUNING, sleepTogether },
   });
+  // the fixed steps the world has taken, to hold a ball's sleep to its window
+  const taken = () => (w as unknown as { steps: number }).steps;
+  const window = DEFAULT_TUNING.sleepSteps;
   w.bumpers = BUMPERS;
   let steps = 0;
   const reported = new Map<number, number>();
@@ -179,7 +194,9 @@ function play(seed: number): string | null {
     const a = random() * Math.PI * 2,
       speed = 5 + random() * 115;
     w.hit(ball, speed * Math.cos(a), speed * Math.sin(a), 0);
-    const at = (s: number) => `seed ${seed}, shot ${shot} at ${speed.toFixed(1)} u/s, step ${s}`;
+    const struck = taken();
+    const at = (s: number) =>
+      `seed ${seed}${sleepTogether ? ', judged together' : ''}, shot ${shot} at ${speed.toFixed(1)} u/s, step ${s}`;
     let s = 0;
     for (; s < LONGEST; s++) {
       w.pushers = obstacles(steps * STEP);
@@ -222,7 +239,13 @@ function play(seed: number): string | null {
       // asleep going as it was, as a ball running round inside the cup's rim once was: hung there for good
       if (w.asleep[ball] && before > SLEEP_SPEED + 70 * STEP)
         return `${at(s)}: put to sleep going ${before.toFixed(2)}`;
-      if (w.asleep[ball]) break;
+      if (w.asleep[ball]) {
+        // struck, it has a whole window of its own before it may sleep, or judged together, a tick with half of one
+        const since = taken() - struck;
+        if (sleepTogether ? taken() % window !== 0 || since < window / 2 : since < window)
+          return `${at(s)}: asleep ${since} steps after it was struck, on step ${taken()}`;
+        break;
+      }
     }
     if (s >= LONGEST) return `${at(s)}: still going after ${LONGEST * STEP} s`;
     if (w.alive[ball]) lie = { x: w.x[ball], y: w.y[ball] };
@@ -238,16 +261,23 @@ function play(seed: number): string | null {
 }
 
 describe('a round of golf played at random', () => {
-  it(`keeps every rule over ${SEEDS.length} seeds of ${SHOTS} shots`, () => {
-    const broken: string[] = [];
-    for (const seed of SEEDS) {
-      const wrong = play(seed);
-      if (wrong) broken.push(wrong);
-    }
-    expect(broken.slice(0, 10), `${broken.length} of ${SEEDS.length} seeds broke a rule`).toEqual([]);
-  });
+  // A round takes about six milliseconds, and a seed is two, so the time allowed grows with the seeds asked for.
+  it(
+    `keeps every rule over ${SEEDS.length} seeds of ${SHOTS} shots, each on its own window and judged together`,
+    () => {
+      const broken: string[] = [];
+      for (const seed of SEEDS)
+        for (const sleepTogether of [false, true]) {
+          const wrong = play(seed, sleepTogether);
+          if (wrong) broken.push(wrong);
+        }
+      expect(broken.slice(0, 10), `${broken.length} of ${SEEDS.length * 2} rounds broke a rule`).toEqual([]);
+    },
+    Math.max(5_000, SEEDS.length * 50),
+  );
 
   it('plays the same round twice from a seed', () => {
-    expect(play(3)).toEqual(play(3));
+    expect(play(3, false)).toEqual(play(3, false));
+    expect(play(3, true)).toEqual(play(3, true));
   });
 });

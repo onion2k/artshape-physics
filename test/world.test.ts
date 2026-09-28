@@ -83,6 +83,9 @@ interface Innards {
   sleepCell: Int32Array;
   next: Int32Array;
   cellOf(x: number, y: number): number;
+  /** The fixed steps taken, and the step each body's sleep window opened on. */
+  steps: number;
+  opened: Int32Array;
 }
 
 /**
@@ -122,6 +125,52 @@ function problems(w0: World): string[] {
   }
   if (withCell !== chained) out.push(`${withCell} bodies think they are chained, ${chained} are`);
   return out;
+}
+
+/**
+ * One frame of a world with sleepTogether, and whatever in it went to sleep
+ * as it should not have: other than on a tick, a step that is a multiple of
+ * the sleep window, or with less than half a window since its own opened. A
+ * frame is at most four steps, so it holds at most one tick. Says, too, how
+ * many went to sleep, so a test can see it looked at something.
+ */
+function stepTogether(w0: World, dt: number): { wrong: string[]; slept: number } {
+  const w = w0 as unknown as Innards;
+  const window = DEFAULT_TUNING.sleepSteps;
+  const before = w.steps;
+  const awake: number[] = [],
+    opened: number[] = [];
+  for (let i = 0; i < w0.count; i++)
+    if (w0.alive[i] && !w0.asleep[i]) {
+      awake.push(i);
+      opened.push(w.opened[i]);
+    }
+  w0.step(dt, () => {});
+  const tick = Math.floor(w.steps / window) * window;
+  const wrong: string[] = [];
+  let slept = 0;
+  awake.forEach((i, k) => {
+    if (!w0.alive[i] || !w0.asleep[i]) return;
+    slept++;
+    if (tick <= before) wrong.push(`body ${i} slept between steps ${before} and ${w.steps}, with no tick among them`);
+    else if (tick - opened[k] < window / 2)
+      wrong.push(`body ${i} slept on the tick at ${tick}, ${tick - opened[k]} steps into its window`);
+  });
+  return { wrong, slept };
+}
+
+/** How many of some bodies went from asleep to awake over a number of fixed steps, each looked at after every one. */
+function wokenAgain(w: World, bodies: number[], steps: number): number {
+  const was = bodies.map((i) => w.asleep[i]);
+  let woken = 0;
+  for (let s = 0; s < steps; s++) {
+    w.step(DEFAULT_TUNING.step, () => {});
+    bodies.forEach((i, k) => {
+      if (was[k] && !w.asleep[i]) woken++;
+      was[k] = w.asleep[i];
+    });
+  }
+  return woken;
 }
 
 describe('the world', () => {
@@ -194,39 +243,41 @@ describe('the world', () => {
     expect(heavy.z[a]).toBeLessThan(light.z[b]);
   });
 
-  it('keeps its sleep bookkeeping straight, and every body out of the rock, while pushers churn a heap', () => {
-    const random = seeded(7);
-    const w = world({ capacity: 2000, random });
-    const heap = { x: -40, y: 15 };
-    for (let k = 0; k < 900; k++) {
-      const r = Math.sqrt(random()) * 9,
-        a = random() * Math.PI * 2;
-      w.spawn(k % 50 === 0 ? 1 : 0, heap.x + Math.cos(a) * r, heap.y + Math.sin(a) * r, 1 + random() * 6);
-    }
-    let pushers: Pusher[] = [];
-    for (let f = 0; f < 600; f++) {
-      const t = f * DT;
-      // the pushers only start after the heap has settled, so sleepers get woken and moved
-      pushers =
-        f < 120
-          ? []
-          : [
-              sweeper(heap.x, heap.y, 7, t, pushers[0] ?? null),
-              sweeper(heap.x + 2, heap.y - 1, 4, -t, pushers[1] ?? null, 1),
-            ];
-      w.pushers = pushers;
-      for (const p of pushers) w.wakeNear(p.x, p.y, 6);
-      w.step(DT, () => {});
-      const wrong = problems(w);
-      if (wrong.length) expect.fail(`frame ${f}: ${wrong.slice(0, 5).join('; ')}`);
-    }
-    expect(w.loads.length).toBe(2);
-    for (let i = 0; i < w.count; i++) {
-      if (!w.alive[i]) continue;
-      const t = tileOf(w.x[i], w.y[i]);
-      expect(t, `body ${i} off the grid`).toBeGreaterThanOrEqual(0);
-      expect(w.solid[t], `body ${i} in rock at ${w.x[i]},${w.y[i]}`).toBe(0);
-      expect(w.z[i]).toBeGreaterThan(-HOLE.depth);
+  it('keeps its sleep bookkeeping straight, and every body out of the rock, while pushers churn a heap, judged together or not', () => {
+    for (const sleepTogether of [false, true]) {
+      const random = seeded(7);
+      const w = world({ capacity: 2000, random, tuning: { sleepTogether } });
+      const heap = { x: -40, y: 15 };
+      for (let k = 0; k < 900; k++) {
+        const r = Math.sqrt(random()) * 9,
+          a = random() * Math.PI * 2;
+        w.spawn(k % 50 === 0 ? 1 : 0, heap.x + Math.cos(a) * r, heap.y + Math.sin(a) * r, 1 + random() * 6);
+      }
+      let pushers: Pusher[] = [];
+      for (let f = 0; f < 600; f++) {
+        const t = f * DT;
+        // the pushers only start after the heap has settled, so sleepers get woken and moved
+        pushers =
+          f < 120
+            ? []
+            : [
+                sweeper(heap.x, heap.y, 7, t, pushers[0] ?? null),
+                sweeper(heap.x + 2, heap.y - 1, 4, -t, pushers[1] ?? null, 1),
+              ];
+        w.pushers = pushers;
+        for (const p of pushers) w.wakeNear(p.x, p.y, 6);
+        w.step(DT, () => {});
+        const wrong = problems(w);
+        if (wrong.length) expect.fail(`sleepTogether ${sleepTogether}, frame ${f}: ${wrong.slice(0, 5).join('; ')}`);
+      }
+      expect(w.loads.length).toBe(2);
+      for (let i = 0; i < w.count; i++) {
+        if (!w.alive[i]) continue;
+        const t = tileOf(w.x[i], w.y[i]);
+        expect(t, `body ${i} off the grid`).toBeGreaterThanOrEqual(0);
+        expect(w.solid[t], `body ${i} in rock at ${w.x[i]},${w.y[i]}`).toBe(0);
+        expect(w.z[i]).toBeGreaterThan(-HOLE.depth);
+      }
     }
   });
 
@@ -380,41 +431,43 @@ describe('the world', () => {
     expect(w.spawn(0, -30, 10, 1)).toBe(i);
   });
 
-  it('lets a body rest on the top of a box, lying flat, and carries it as the box moves', () => {
-    const w = world({ holes: [] });
-    const box = (x: number, vx: number, px: number): Pusher => ({
-      x,
-      y: 20,
-      z: 1,
-      yaw: 0,
-      hx: 6,
-      hy: 6,
-      hz: 1,
-      vx,
-      vy: 0,
-      spin: 0,
-      px,
-      py: 20,
-      owner: 0,
-    });
-    w.pushers = [box(0, 0, 0)];
-    const i = w.spawn(0, 0, 20, 6);
-    for (let f = 0; f < 180; f++) w.step(DT, () => {});
-    expect(w.z[i]).toBeCloseTo(2 + RADII[0], 1);
-    // flat: no tilt left about x or y
-    expect(Math.abs(w.q[i * 4])).toBeLessThan(0.05);
-    expect(Math.abs(w.q[i * 4 + 1])).toBeLessThan(0.05);
-    // asleep on the box, and the box moves off without anyone waking it: it goes along, not left in the air
-    expect(w.asleep[i]).toBe(1);
-    let x = 0;
-    for (let f = 0; f < 120; f++) {
-      const was = x;
-      x += 5 * DT;
-      w.pushers = [box(x, 5, was)];
-      w.step(DT, () => {});
+  it('lets a body rest on the top of a box, lying flat, and carries it as the box moves, judged together or not', () => {
+    for (const sleepTogether of [false, true]) {
+      const w = world({ holes: [], tuning: { sleepTogether } });
+      const box = (x: number, vx: number, px: number): Pusher => ({
+        x,
+        y: 20,
+        z: 1,
+        yaw: 0,
+        hx: 6,
+        hy: 6,
+        hz: 1,
+        vx,
+        vy: 0,
+        spin: 0,
+        px,
+        py: 20,
+        owner: 0,
+      });
+      w.pushers = [box(0, 0, 0)];
+      const i = w.spawn(0, 0, 20, 6);
+      for (let f = 0; f < 180; f++) w.step(DT, () => {});
+      expect(w.z[i]).toBeCloseTo(2 + RADII[0], 1);
+      // flat: no tilt left about x or y
+      expect(Math.abs(w.q[i * 4])).toBeLessThan(0.05);
+      expect(Math.abs(w.q[i * 4 + 1])).toBeLessThan(0.05);
+      // asleep on the box, and the box moves off without anyone waking it: it goes along, not left in the air
+      expect(w.asleep[i]).toBe(1);
+      let x = 0;
+      for (let f = 0; f < 120; f++) {
+        const was = x;
+        x += 5 * DT;
+        w.pushers = [box(x, 5, was)];
+        w.step(DT, () => {});
+      }
+      expect(w.x[i]).toBeGreaterThan(x - 2);
+      expect(w.z[i]).toBeCloseTo(2 + RADII[0], 1);
     }
-    expect(w.x[i]).toBeGreaterThan(x - 2);
-    expect(w.z[i]).toBeCloseTo(2 + RADII[0], 1);
   });
 
   it('wakes only within the height band it is given', () => {
@@ -605,16 +658,18 @@ describe('the world', () => {
     expect(w.x[held]).toBeCloseTo(10, 5);
   });
 
-  it('keeps its sleep bookkeeping straight when sleepers in a heap are hit', () => {
-    const random = seeded(4);
-    const w = world({ capacity: 400, random });
-    for (let k = 0; k < 300; k++) w.spawn(0, -40 + random() * 8, 15 + random() * 8, 1 + random() * 4);
-    for (let f = 0; f < 240; f++) w.step(DT, () => {});
-    for (let f = 0; f < 120; f++) {
-      if (f % 10 === 0) for (let k = 0; k < 5; k++) w.hit((f * 7 + k * 53) % 300, 8, -3, 2);
-      w.step(DT, () => {});
-      const wrong = problems(w);
-      if (wrong.length) expect.fail(`frame ${f}: ${wrong.slice(0, 5).join('; ')}`);
+  it('keeps its sleep bookkeeping straight when sleepers in a heap are hit, judged together or not', () => {
+    for (const sleepTogether of [false, true]) {
+      const random = seeded(4);
+      const w = world({ capacity: 400, random, tuning: { sleepTogether } });
+      for (let k = 0; k < 300; k++) w.spawn(0, -40 + random() * 8, 15 + random() * 8, 1 + random() * 4);
+      for (let f = 0; f < 240; f++) w.step(DT, () => {});
+      for (let f = 0; f < 120; f++) {
+        if (f % 10 === 0) for (let k = 0; k < 5; k++) w.hit((f * 7 + k * 53) % 300, 8, -3, 2);
+        w.step(DT, () => {});
+        const wrong = problems(w);
+        if (wrong.length) expect.fail(`sleepTogether ${sleepTogether}, frame ${f}: ${wrong.slice(0, 5).join('; ')}`);
+      }
     }
   });
 
@@ -816,6 +871,138 @@ describe('the world', () => {
     for (let f = 0; f < 180; f++) w.step(DT, () => {});
     expect(w.asleep[i]).toBe(1);
     expect(w.z[i]).toBeCloseTo(2 + RADII[0], 1);
+  });
+
+  it('with sleepTogether, puts a body to sleep only on a tick, with half a window behind it, at any frame length', () => {
+    for (const dt of [1 / 30, 1 / 60, 1 / 144]) {
+      const random = seeded(5);
+      const w = world({ capacity: 400, holes: [], random, tuning: { sleepTogether: true } });
+      let slept = 0;
+      for (let f = 0; f < Math.round(8 / dt); f++) {
+        // a heap poured a ball a frame, so windows open on every step there is, and a sleeper in it now and then
+        // barely touched, which would sleep again on the very next tick if a sliver of a window were enough
+        if (w.live < 300) {
+          const r = Math.sqrt(random()) * 4,
+            a = random() * Math.PI * 2;
+          w.spawn(0, -40 + Math.cos(a) * r, 15 + Math.sin(a) * r, 1 + random() * 3);
+        }
+        const i = Math.floor(random() * w.count);
+        if (f % 3 === 0 && w.asleep[i]) w.hit(i, 0.2, 0, 0);
+        const frame = stepTogether(w, dt);
+        if (frame.wrong.length) expect.fail(`dt ${dt.toFixed(4)}, frame ${f}: ${frame.wrong.slice(0, 3).join('; ')}`);
+        slept += frame.slept;
+      }
+      expect(slept, `dt ${dt.toFixed(4)}`).toBeGreaterThan(300);
+    }
+    expect(DEFAULT_TUNING.sleepTogether).toBe(false);
+  });
+
+  it('with sleepTogether, lets two balls held into each other by a ring of sleepers sleep, where each on its own window they wake each other for ever', () => {
+    // Four sleepers round two balls, a third of a unit into each other and more, which a sleeper wakes at: pushed
+    // apart, each is put back out of the ring, so they stay in. The second is put down ten steps after the first, so
+    // their own windows close ten steps apart, and whichever sleeps first the other wakes.
+    const R = RADII[0];
+    const cage = (sleepTogether: boolean) => {
+      const w = world({ holes: [], tuning: { sleepTogether } });
+      const cx = -40,
+        cy = 15,
+        half = 0.2;
+      const end = half + 2 * R,
+        side = Math.sqrt(4 * R * R - half * half);
+      const ring = [
+        [-end, 0],
+        [end, 0],
+        [0, side],
+        [0, -side],
+      ].map(([x, y]) => w.spawn(0, cx + x, cy + y, R));
+      for (let s = 0; s < 80; s++) w.step(DEFAULT_TUNING.step, () => {});
+      for (const i of ring) expect(w.asleep[i]).toBe(1);
+      const a = w.spawn(0, cx - half, cy, R);
+      for (let s = 0; s < 10; s++) w.step(DEFAULT_TUNING.step, () => {});
+      const b = w.spawn(0, cx + half, cy, R);
+      for (let s = 0; s < 600; s++) w.step(DEFAULT_TUNING.step, () => {});
+      const woken = wokenAgain(w, [a, b], 600);
+      const into = 2 * R - Math.hypot(w.x[a] - w.x[b], w.y[a] - w.y[b], w.z[a] - w.z[b]);
+      return { woken, asleep: [w.asleep[a], w.asleep[b]], ring: ring.map((i) => w.asleep[i]), into };
+    };
+    const own = cage(false);
+    expect(own.into).toBeGreaterThan(0.3);
+    // each of the two woken about once a window, for as long as it is watched
+    expect(own.woken).toBeGreaterThan(20);
+    const together = cage(true);
+    expect(together).toMatchObject({ woken: 0, asleep: [1, 1], ring: [1, 1, 1, 1] });
+    expect(together.into).toBeGreaterThan(0.3);
+  });
+
+  it('with sleepTogether, keeps what appeared or was touched just before a tick from sleeping on it', () => {
+    const w = world({ holes: [], tuning: { sleepTogether: true } });
+    const window = DEFAULT_TUNING.sleepSteps;
+    const resting = w.spawn(0, -40, 15, RADII[0]);
+    for (let s = 0; s < 2 * window - 1; s++) w.step(DEFAULT_TUNING.step, () => {});
+    expect(w.asleep[resting]).toBe(1);
+    // a step before the tick at twice the window: one put up in the air, and the sleeper barely touched
+    const dropped = w.spawn(0, -30, 15, 3);
+    w.hit(resting, 0.2, 0, 0);
+    w.step(DEFAULT_TUNING.step, () => {});
+    expect((w as unknown as Innards).steps % window).toBe(0);
+    expect(w.asleep[dropped]).toBe(0);
+    expect(w.asleep[resting]).toBe(0);
+    for (let s = 0; s < 3 * window; s++) w.step(DEFAULT_TUNING.step, () => {});
+    expect(w.asleep[dropped]).toBe(1);
+    expect(w.z[dropped]).toBeCloseTo(RADII[0], 2);
+    expect(w.asleep[resting]).toBe(1);
+  });
+
+  it('with sleepTogether and sleepInAir off, never leaves a bouncing ball asleep in the air', () => {
+    let hung = 0,
+      resting = 0;
+    for (let k = 0; k < 20; k++) {
+      const w = world({ holes: [], tuning: { restitution: 0.6, sleepInAir: false, sleepTogether: true } });
+      const i = w.spawn(0, -30, 10, 3 + k * 0.17);
+      for (let f = 0; f < 600; f++) w.step(DT, () => {});
+      if (w.asleep[i] && w.z[i] > RADII[0] + 0.01) hung++;
+      if (w.asleep[i] && Math.abs(w.z[i] - RADII[0]) < 0.01) resting++;
+    }
+    expect({ hung, resting }).toEqual({ hung: 0, resting: 20 });
+  });
+
+  it('with sleepTogether, holds a carried body still and awake across ticks, and let go a step before one, lets it fall before it sleeps', () => {
+    const w = world({ tuning: { sleepTogether: true } });
+    const window = DEFAULT_TUNING.sleepSteps;
+    const i = w.spawn(0, 10, 10, 6);
+    w.carried[i] = 1;
+    for (let s = 0; s < 3 * window - 1; s++) w.step(DEFAULT_TUNING.step, () => {});
+    expect(w.z[i]).toBe(6);
+    expect(w.asleep[i]).toBe(0);
+    // held for three windows, and let go a step before the tick: it has not been still a window, it has been held
+    w.carried[i] = 0;
+    w.step(DEFAULT_TUNING.step, () => {});
+    expect((w as unknown as Innards).steps % window).toBe(0);
+    expect(w.asleep[i]).toBe(0);
+    for (let f = 0; f < 240; f++) w.step(DT, () => {});
+    expect(w.asleep[i]).toBe(1);
+    expect(w.z[i]).toBeCloseTo(RADII[0], 2);
+  });
+
+  it('with sleepTogether, steps the same churned heap bit for bit from the same seed', () => {
+    const churn = () => {
+      const random = seeded(9);
+      const w = world({ capacity: 500, random, tuning: { sleepTogether: true } });
+      for (let k = 0; k < 400; k++) {
+        const r = Math.sqrt(random()) * 7,
+          a = random() * Math.PI * 2;
+        w.spawn(k % 40 ? 0 : 1, -40 + Math.cos(a) * r, 15 + Math.sin(a) * r, 1 + random() * 5);
+      }
+      let pushers: Pusher[] = [];
+      for (let f = 0; f < 300; f++) {
+        pushers = f < 120 ? [] : [sweeper(-40, 15, 5, f * DT, pushers[0] ?? null)];
+        w.pushers = pushers;
+        for (const p of pushers) w.wakeNear(p.x, p.y, 6);
+        w.step(DT, () => {});
+      }
+      return [w.x, w.y, w.z, w.vx, w.vy, w.vz, w.asleep].map((a) => Array.from(a));
+    };
+    expect(churn()).toEqual(churn());
   });
 
   /** A world whose floor is flat but for one strip of tiles, two tiles wide from column 40 (x 30 to 36), at a height. */

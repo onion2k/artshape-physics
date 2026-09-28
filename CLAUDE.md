@@ -28,19 +28,20 @@ needed slopes.
 
 ## Commands
 
-    npm run check          the full check: check:quick, then the bench (~16 s)
-    npm run check:quick    formatting, types, lint, and the tests (~7 s)
+    npm run check          the full check: check:quick, then the bench (~20 s)
+    npm run check:quick    formatting, types, lint, and the tests (~10 s)
     npm test               the tests alone (Vitest, test/), the unchanged gate and the golf fuzzer among them
     npm run test:watch     the tests, again on each save
-    npm run bench          a frame's cost in four scenes, held to scripts/bench-baseline.json and a budget (~8.5 s)
+    npm run bench          a frame's cost in five scenes, held to scripts/bench-baseline.json and a budget (~9.5 s)
     npm run typecheck      tsc, no emit
     npm run lint           eslint, type-aware
     npm run format         prettier, writing
 
-`npm run bench -- --update` writes the bench's baseline again, and
-`UNCHANGED_UPDATE=1 npx vitest run test/unchanged.test.ts` the unchanged
-gate's hashes. Each is only for a change meant to move it, and the commit
-says why. There is no pre-commit hook: run `check:quick` before a commit.
+`npm run bench -- --update` writes the bench's baseline again, every scene
+of it, and `UNCHANGED_UPDATE=1 npx vitest run test/unchanged.test.ts` the
+unchanged gate's hashes. Each is only for a change meant to move it, and
+the commit says why. There is no pre-commit hook: run `check:quick` before
+a commit.
 
 The gates, one by one:
 
@@ -50,27 +51,36 @@ The gates, one by one:
   `switch-exhaustiveness-check` and `no-unnecessary-condition`. It is for
   mistakes, not style.
 - **Tests:** `vitest run`. Every behaviour the README claims has a test.
+  `test/settle.test.ts` counts heaps coming to rest over runs of seeds,
+  judged together and each on its own window, in a file of its own so it
+  runs beside the rest.
 - **Fuzzer:** `test/golf.fuzz.test.ts`, among the tests. A round of golf
   played at random from 24 seeds on a course with everything ooergolf asks
-  for, and after every step: the ball's middle never in a wall, never more
-  than a tenth into a box or a post, never sped up but by gravity or a
+  for, each seed twice, each body on its own sleep window and judged
+  together, and after every step: the ball's middle never in a wall, never
+  more than a tenth into a box or a post, never sped up but by gravity or a
   bumper or a moving box, never put to sleep going faster than its
-  `sleepSpeed`, reported at most once, and every shot ended within 30 s.
-  With `FUZZ_NO_SLEEP_SPEED=1` it plays without the option, and 37 of 500
-  seeds put a ball to sleep going at 3 to 12 a second. `FUZZ_SEEDS=1-500 npx vitest run test/golf.fuzz.test.ts` for
-  more; a failure names its seed, shot and step. A course is not to drive a
-  box against a wall with less than a ball's width between: the ball is in
-  one or the other, and the rock, looked at last, wins.
+  `sleepSpeed`, reported at most once, every shot ended within 30 s, and
+  none asleep sooner than its window lets it: a whole window after it was
+  struck, or judged together, on a tick with half of one. With
+  `FUZZ_NO_SLEEP_SPEED=1` it plays without the option, and 37 of 500 seeds
+  on their own windows put a ball to sleep going at 3 to 12 a second.
+  `FUZZ_SEEDS=1-500 npx vitest run test/golf.fuzz.test.ts` for more, whose
+  time allowed grows with the seeds; a failure names its seed, shot and
+  step. A course is not to drive a box against a wall with less than a
+  ball's width between: the ball is in one or the other, and the rock,
+  looked at last, wins.
 - **Unchanged:** `test/unchanged.test.ts`, among the tests. Six scenes run
   from seeds with no new option set, every body's state hashed at frames
   60, 300 and 600, and held bit for bit to `test/unchanged.json`, written at
   v0.3.0. It is what says a game that has not opted in behaves exactly as
   before. Each scene is run twice, so a hash that moves is a change and not
   chance. A Node upgrade that moves it is confirmed on the old commit first.
-- **Bench:** `scripts/bench.ts`. Four scenes, one for each game's costly
-  part, each run four times fresh in a worker, the fastest counted, and held
-  as a multiple of a piece of reference arithmetic, so a baseline written on
-  one machine means something on another. It fails at 20% slower or faster
+- **Bench:** `scripts/bench.ts`. Five scenes, one for each game's costly
+  part and one of a heap at rest judged together, each run four times fresh
+  in a worker, the fastest counted, and held as a multiple of a piece of
+  reference arithmetic, so a baseline written on one machine means
+  something on another. It fails at 20% slower or faster
   than the baseline, past a slack of a fifth of a microsecond, over a
   scene's budget, or when a scene's runs do not end alike.
 
@@ -128,8 +138,10 @@ at 2.2 to 2.5 ms a frame.
 
 ## The test API
 
-The tests use the public `World` and nothing else, except `problems()`,
-which casts to an `Innards` interface to read the private lists.
+The tests use the public `World` and nothing else, except `problems()` and
+`stepTogether()`, which cast to an `Innards` interface to read the private
+lists, the fixed steps taken (`steps`) and when each body's sleep window
+opened (`opened`).
 
 - **Setting up:** `new World({...})` on a grid of the test's own
   (`GRID`, with `solid()` giving a border of rock and whatever else a
@@ -142,8 +154,11 @@ vz?)`, `setOrientation`, `hit(i, vx, vy, vz)` (or writing `vx`/`vy`/`vz` and
 - **Time:** `step(DT, collect)` at `DT = 1/60`, which is two fixed steps of
   1/120. The steps are counted, and nothing waits on a clock.
 - **Reading:** the typed arrays, `live`, `count`, `loads`, `load`, `axis(i)`,
-  `floorAt(x, y)`, `deepest(resting)`, what `collect` was called with, and
-  `problems(world)`.
+  `floorAt(x, y)`, `deepest(resting)`, what `collect` was called with,
+  `problems(world)`, `stepTogether(world, dt)`, which steps a frame and says
+  what went to sleep off the tick or on a sliver of a window, and
+  `wokenAgain(world, bodies, steps)`, which counts sleepers woken, looking
+  after every fixed step.
 
 ## Edge-case checklist
 
@@ -157,7 +172,9 @@ applies:
   touches it below its middle, or with `sleepInAir` off a body resting on
   it never sleeps. A body that can come back round to where it was in a
   sleep window, running round a rim or between two things, is held awake by
-  `sleepSpeed`, and needs a test that it is.
+  `sleepSpeed`, and needs a test that it is. Anything that opens a body's
+  sleep window says so, and with `sleepTogether` a body is judged only on a
+  tick, with half a window behind it.
 - **Carried:** a body with `carried[i]` set is not stepped, and nothing new
   moves it or reports it. Its sleep window is opened afresh each step it is
   held, so let go it is judged from then, and falls before it can sleep. A
@@ -198,15 +215,15 @@ applies:
 
 ## Gates and baselines
 
-| Gate      | Holds the package to                          | Baseline and tolerance                                                          |
-| --------- | --------------------------------------------- | ------------------------------------------------------------------------------- |
-| Format    | prettier's formatting                         | none: pass or fail                                                              |
-| Types     | strict TypeScript                             | none: pass or fail                                                              |
-| Lint      | the type-aware rules                          | none: pass or fail                                                              |
-| Tests     | every behaviour the README claims             | 131 tests at v0.4.3 (127 at v0.4.2, 123 at v0.4.1, 120 at v0.4.0, 30 at v0.3.0) |
-| Unchanged | every game's world as v0.3.0 stepped it       | `test/unchanged.json`, bit for bit                                              |
-| Fuzzer    | the rules a golf ball keeps, struck at random | 24 seeds of 12 shots, every rule on every step                                  |
-| Bench     | what a frame costs, in four scenes            | `scripts/bench-baseline.json`, ±20% both ways, 0.0002 ms slack                  |
+| Gate      | Holds the package to                          | Baseline and tolerance                                                                         |
+| --------- | --------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| Format    | prettier's formatting                         | none: pass or fail                                                                             |
+| Types     | strict TypeScript                             | none: pass or fail                                                                             |
+| Lint      | the type-aware rules                          | none: pass or fail                                                                             |
+| Tests     | every behaviour the README claims             | 142 tests at v0.5.0 (131 at v0.4.3, 127 at v0.4.2, 123 at v0.4.1, 120 at v0.4.0, 30 at v0.3.0) |
+| Unchanged | every game's world as v0.3.0 stepped it       | `test/unchanged.json`, bit for bit                                                             |
+| Fuzzer    | the rules a golf ball keeps, struck at random | 24 seeds of 12 shots, each both ways, every rule on every step                                 |
+| Bench     | what a frame costs, in five scenes            | `scripts/bench-baseline.json`, ±20% both ways, 0.0002 ms slack                                 |
 
 The bench's budgets, in milliseconds a frame on the fastest run, and its
 baselines as written (on an M4 Pro, Node 23.4.0):
@@ -217,6 +234,7 @@ baselines as written (on an M4 Pro, Node 23.4.0):
 | a bed of 1500 discs, timed while the pusher is in it | coinpush              | 4      | 1.24     |
 | one ball shot round a golf course                    | ooergolf              | 0.1    | 0.0019   |
 | 64 balls on that course at 120 u/s                   | ooergolf, at capacity | 1      | 0.042    |
+| a heap of 2000 balls at rest, judged together        | pushminer, at rest    | 0.01   | 0.0006   |
 
 The tolerance is the measured wobble with room to spare: over three runs
 no scene moved by more than 7%. The golf scenes grow as the golf features

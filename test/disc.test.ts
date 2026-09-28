@@ -77,6 +77,43 @@ const lowest = (w: World, i: number) => {
   return w.z[i] - R * Math.sqrt(Math.max(0, 1 - nz * nz)) - (H / 2) * nz;
 };
 
+/** What a test reads of the world's sleep windows: the fixed steps taken, and the step each body's opened on. */
+interface Windows {
+  steps: number;
+  opened: Int32Array;
+}
+
+/**
+ * One frame of a world with sleepTogether, and whatever in it went to sleep
+ * other than on a tick, or with less than half a window since its own
+ * opened; and how many went to sleep. The world's own tests have the same.
+ */
+function stepTogether(w: World, dt: number): { wrong: string[]; slept: number } {
+  const inner = w as unknown as Windows;
+  const window = DEFAULT_TUNING.sleepSteps;
+  const before = inner.steps;
+  const awake: number[] = [],
+    opened: number[] = [];
+  for (let i = 0; i < w.count; i++)
+    if (w.alive[i] && !w.asleep[i]) {
+      awake.push(i);
+      opened.push(inner.opened[i]);
+    }
+  w.step(dt, () => {});
+  const tick = Math.floor(inner.steps / window) * window;
+  const wrong: string[] = [];
+  let slept = 0;
+  awake.forEach((i, k) => {
+    if (!w.alive[i] || !w.asleep[i]) return;
+    slept++;
+    if (tick <= before)
+      wrong.push(`coin ${i} slept between steps ${before} and ${inner.steps}, with no tick among them`);
+    else if (tick - opened[k] < window / 2)
+      wrong.push(`coin ${i} slept on the tick at ${tick}, ${tick - opened[k]} steps into its window`);
+  });
+  return { wrong, slept };
+}
+
 describe('a disc', () => {
   it('dropped at a tilt comes to lie flat on the floor at half its thickness, and sleeps', () => {
     const w = world();
@@ -731,6 +768,54 @@ describe('a disc', () => {
     expect(w.asleep[i]).toBe(1);
     expect(w.z[i]).toBeCloseTo(H / 2, 1);
     expect(tilt(w, i)).toBeLessThan(0.03);
+  });
+
+  it('with sleepTogether, sleeps only on a tick, with half a window behind it, at any frame length', () => {
+    for (const dt of [1 / 30, 1 / 60, 1 / 144]) {
+      const random = seeded(3);
+      const w = world({ capacity: 200, random, tuning: { cell: 1.2, sleepTogether: true } });
+      let slept = 0;
+      for (let f = 0; f < Math.round(6 / dt); f++) {
+        // a heap poured a coin a frame, and a sleeper in it now and then barely touched
+        if (w.live < 150) {
+          const r = Math.sqrt(random()) * 2,
+            t = random() * Math.PI * 2;
+          w.spawn(DISC, Math.cos(t) * r, Math.sin(t) * r, 0.5 + random() * 3);
+        }
+        const i = Math.floor(random() * w.count);
+        if (f % 3 === 0 && w.asleep[i]) w.hit(i, 0.2, 0, 0);
+        const frame = stepTogether(w, dt);
+        if (frame.wrong.length) expect.fail(`dt ${dt.toFixed(4)}, frame ${f}: ${frame.wrong.slice(0, 3).join('; ')}`);
+        slept += frame.slept;
+      }
+      expect(slept, `dt ${dt.toFixed(4)}`).toBeGreaterThan(150);
+    }
+  });
+
+  it('with sleepTogether, held and let go a step before a tick, falls and lies flat before it sleeps', () => {
+    const w = world({ tuning: { cell: 1.2, sleepTogether: true } });
+    const i = flat(w, 0, 0, 3);
+    w.carried[i] = 1;
+    for (let s = 0; s < 79; s++) w.step(1 / 120, () => {});
+    w.carried[i] = 0;
+    w.step(1 / 120, () => {});
+    expect(w.asleep[i]).toBe(0);
+    run(w, 3);
+    expect(w.asleep[i]).toBe(1);
+    expect(w.z[i]).toBeCloseTo(H / 2, 2);
+  });
+
+  it('with sleepTogether and sleepInAir off, tossed up, comes down and lies flat before it sleeps', () => {
+    const w = world({ tuning: { cell: 1.2, sleepInAir: false, sleepTogether: true } });
+    const i = flat(w, 0, 0, H / 2);
+    let slept = -1;
+    for (let s = 0; s < 240; s++) {
+      // tossed a step before the tick at forty, and again a step before the one at eighty
+      if (s === 39 || s === 79) w.vz[i] = 5;
+      w.step(1 / 120, () => {});
+      if (slept < 0 && w.asleep[i]) slept = w.z[i];
+    }
+    expect(slept).toBeCloseTo(H / 2, 1);
   });
 
   it('with sleepInAir off, lets a ball lying on a coin rest there and sleep', () => {

@@ -10,9 +10,10 @@
  * what that game asks of it: a heap of balls churned by two pushers, for
  * pushminer; a bed of coins pushed toward a drop, for coinpush; one ball
  * shot round a golf course, and that course with as many balls on it as it
- * holds, for ooergolf. Without it nothing holds the package to what a frame
- * costs, and a change that makes a coin twice as dear reaches every game
- * that pins it before anyone has noticed.
+ * holds, for ooergolf. And one for what most frames are, a heap at rest,
+ * judged together, which is to cost next to nothing. Without it nothing
+ * holds the package to what a frame costs, and a change that makes a coin
+ * twice as dear reaches every game that pins it before anyone has noticed.
  *
  * A time on one machine is not a time on another, or on the same one with
  * something else running. So each scene is run several times, fresh, in a
@@ -36,7 +37,7 @@
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import { Worker, isMainThread, parentPort, workerData } from 'node:worker_threads';
-import { World, type Bumper, type Grid, type Hole, type Pusher, type Surface } from '../src/world';
+import { World, type Bumper, type Grid, type Hole, type Pusher, type Surface, type Tuning } from '../src/world';
 
 const BASELINE = 'scripts/bench-baseline.json';
 /**
@@ -152,8 +153,8 @@ function sweeper(cx: number, cy: number, radius: number, t: number, prev: Pusher
   };
 }
 
-/** The heap poured, not yet settled. */
-function poured(seed: number): World {
+/** The heap poured, not yet settled, in a world with the tuning given. */
+function poured(seed: number, tuning: Partial<Tuning> = {}): World {
   const random = seeded(seed);
   const world = new World({
     capacity: HEAP.count,
@@ -162,6 +163,7 @@ function poured(seed: number): World {
     radii: HEAP.radii,
     holes: [HEAP.hole],
     random,
+    tuning,
   });
   for (let k = 0; k < HEAP.count; k++) {
     const r = Math.sqrt(random()) * HEAP.radius,
@@ -187,6 +189,20 @@ function heap(seed: number) {
     world.step(DT, nothing);
   };
   return { world, frame };
+}
+
+/**
+ * The heap judged together and left alone: settled until nothing in it is
+ * awake, which takes it two or three seconds, and then stepped with nothing
+ * to do. Each body on a window of its own, balls held into each other by the
+ * sleepers round them wake each other for ever: this heap keeps thirty-odd
+ * awake at a tenth of a millisecond a frame, and pushminer's cave at rest
+ * kept 257 at half a millisecond.
+ */
+function rest(seed: number) {
+  const world = poured(seed, { sleepTogether: true });
+  for (let f = 0; f < 300; f++) world.step(DT, nothing);
+  return { world, frame: () => world.step(DT, nothing) };
 }
 
 /**
@@ -541,6 +557,13 @@ const SCENES: Scene[] = [
     budget: 1,
     frames: 600,
     setup: () => crowd(2),
+  },
+  {
+    name: 'a heap of 2000 balls at rest, judged together',
+    // Next to nothing, with none of it awake. Each on a window of its own the same heap costs 0.07 to 0.1 ms.
+    budget: 0.01,
+    frames: 600,
+    setup: () => rest(7),
   },
 ];
 

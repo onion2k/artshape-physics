@@ -168,6 +168,19 @@ export interface Tuning {
    */
   squeezedStill: boolean;
   /**
+   * Whether bodies are judged for sleep together, on one tick every
+   * `sleepSteps` steps, rather than each at the end of a window of its own.
+   * Two balls held further into each other than a sleeper lets anything be,
+   * by a ring of sleepers round them, wake each other the step either
+   * sleeps; judged each on its own window they never sleep on the same step,
+   * and in Pushminer's cave at rest 156 such pairs kept 257 bodies of 9073
+   * awake for ever. Judged together, they sleep together. A body is judged on
+   * a tick only with half a window behind it, so what appeared or was woken
+   * just before one has had time to move. False, the default, is each on a
+   * window of its own, as it has been since v0.3.0.
+   */
+  sleepTogether: boolean;
+  /**
    * Whether a ball banks off a wall of tiles as off one flat wall. A wall is
    * made of tiles, and a ball meeting the face of one, near where the next
    * one along begins, meets that one's corner too, flush with the face: it is
@@ -249,6 +262,7 @@ export const DEFAULT_TUNING: Tuning = {
   sleepInAir: true,
   sleepSpeed: Infinity,
   squeezedStill: false,
+  sleepTogether: false,
   smoothWalls: false,
   travel: Infinity,
 };
@@ -414,7 +428,7 @@ export class World {
   private readonly sy: Float32Array;
   private readonly sz: Float32Array;
   private readonly so: Float32Array;
-  /** The step each body's window opened on. A body is judged on a whole window of its own, never on the tail of everyone's: one that appeared a step before a shared tick had moved nowhere yet, and slept where it appeared, in the air. */
+  /** The step each body's window opened on. A body is judged on a whole window of its own, never on the tail of everyone's: one that appeared a step before a shared tick had moved nowhere yet, and slept where it appeared, in the air. With sleepTogether it is judged on the shared tick, but never with less than half a window of its own. */
   private readonly opened: Int32Array;
   private steps = 0;
   /** Held by a drone: not stepped, still drawn where the drone puts it, and let go, judged for sleep from then. */
@@ -639,6 +653,13 @@ export class World {
     ];
   }
 
+  /** Whether a body is judged for sleep this step: its own window has closed, or with sleepTogether, the tick has come and it has half a window behind it. */
+  private due(i: number): boolean {
+    const open = this.steps - this.opened[i];
+    if (!this.tune.sleepTogether) return open >= this.tune.sleepSteps;
+    return this.steps % this.tune.sleepSteps === 0 && open >= this.tune.sleepSteps / 2;
+  }
+
   /** The sleep window opened afresh on a body: where it is, and how it is turned. */
   private window(i: number) {
     this.opened[i] = this.steps;
@@ -844,7 +865,7 @@ export class World {
         vy[i] *= k;
         vz[i] *= k;
       }
-      if (this.steps - this.opened[i] >= this.tune.sleepSteps) {
+      if (this.due(i)) {
         const dx = x[i] - this.sx[i],
           dy = y[i] - this.sy[i],
           dz = z[i] - this.sz[i];
@@ -1204,7 +1225,7 @@ export class World {
       wy[i] *= k;
       wz[i] *= k;
     }
-    if (this.steps - this.opened[i] < this.tune.sleepSteps) return;
+    if (!this.due(i)) return;
     const dx = x[i] - this.sx[i],
       dy = y[i] - this.sy[i],
       dz = z[i] - this.sz[i];

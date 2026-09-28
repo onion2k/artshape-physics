@@ -26,5 +26,12 @@
     "ref": 15.5348,
     "awake": 54,
     "live": 64
+  },
+  "a heap of 2000 balls at rest, judged together": {
+    "relative": 3.7871215375882395e-5,
+    "ms": 0.0006,
+    "ref": 15.5167,
+    "awake": 0,
+    "live": 2000
   }
 }

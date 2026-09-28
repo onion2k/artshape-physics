@@ -159,13 +159,22 @@ tiles, and what falls into a hole is reported through a callback.
   gravity, friction, restitution, drag, the settling of what is slow, the
   sleep window, whether a body may sleep in the air, the fastest it may be
   going to sleep, whether a squeezed coin is read back going only where it
-  went, the hash cell — is a record with a coin-sized world as its
-  defaults. Sleep goes by how far a body has got over a window of steps, and
-  one bouncing, or running round the inside of a cup's rim, can be back
-  where it was by the window's end; with `sleepInAir` off, a body sleeps
-  only once it lies on something, and a ball with a `sleepSpeed` only once it is
-  going slower than that. Without one, a golf fuzzer's ball was put to sleep
-  going at up to twelve a second in 37 rounds of 500.
+  went, whether bodies are judged for sleep together, the hash cell — is a
+  record with a coin-sized world as its defaults. Sleep goes by how far a
+  body has got over a window of steps, and one bouncing, or running round
+  the inside of a cup's rim, can be back where it was by the window's end;
+  with `sleepInAir` off, a body sleeps only once it lies on something, and a
+  ball with a `sleepSpeed` only once it is going slower than that. Without
+  one, a golf fuzzer's ball was put to sleep going at up to twelve a second
+  in 37 rounds of 500. Each body is judged on a window of its own, and two
+  held further into each other than a sleeper lets anything be, by the
+  sleepers round them, wake each other the step either sleeps, for ever.
+  With `sleepTogether` every body is judged on one tick every window, once
+  it has half a window behind it, and those two sleep together: a heap of
+  balls left alone comes to rest with none awake, where on their own windows
+  thirty-odd of two thousand stay awake. A heap of coins settles with a
+  tenth fewer awake, and can still be left with a squeezed pair, which
+  `squeezedStill` lets rest.
 
 ## Using it
 
@@ -221,7 +230,9 @@ The tests build a floor of their own and put things on it: a dropped body
 rests at its radius and sleeps; a hole collects once, says which hole it
 was, and frees the slot, even one that reaches below the bottom; a
 world has as many holes as it is given; the sleep bookkeeping stays straight
-while pushers churn a heap; nothing is shoved into or through the rock; a
+while pushers churn a heap; judged together, nothing sleeps but on a tick
+with half a window behind it, and a heap of balls comes to rest with none
+awake and none woken again; nothing is shoved into or through the rock; a
 belt carries and a magnet pulls; a body rests on the tile under it, falls
 from a high tile to a low one, is stopped by a step from below, and is
 reported when it falls out of the bottom; a carried body let go falls and
@@ -234,7 +245,8 @@ Six scenes, run from seeds, hold the world bit for bit to how v0.3.0 stepped
 it, so a game that has not asked for anything new gets nothing new. The
 bench holds a frame's cost in a scene for each game that uses the package: a
 heap churned, a bed of coins pushed, and a golf ball shot round a course,
-alone and sixty-four at once.
+alone and sixty-four at once; and in a heap at rest, judged together, which
+is to cost next to nothing.
 
 The discs have tests of their own, of what a coin does: lying, stacking,
 leaning as put and as dropped, wedged on edge, tipping off an overhang, over
