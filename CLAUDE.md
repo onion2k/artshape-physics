@@ -274,15 +274,15 @@ applies:
 
 ## Gates and baselines
 
-| Gate      | Holds the package to                                                                | Baseline and tolerance                                                                                                                                                 |
-| --------- | ----------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Format    | prettier's formatting                                                               | none: pass or fail                                                                                                                                                     |
-| Types     | strict TypeScript                                                                   | none: pass or fail                                                                                                                                                     |
-| Lint      | the type-aware rules                                                                | none: pass or fail                                                                                                                                                     |
-| Tests     | every behaviour the README claims                                                   | 199 with step edges, unreleased (189 at v0.7.0, 178 at v0.6.0, 143 at v0.5.1, 142 at v0.5.0, 131 at v0.4.3, 127 at v0.4.2, 123 at v0.4.1, 120 at v0.4.0, 30 at v0.3.0) |
-| Unchanged | every game's world as v0.3.0 stepped it, and terrain round level cups as v0.6.0 did | `test/unchanged.json`, bit for bit                                                                                                                                     |
-| Fuzzer    | the rules a golf ball keeps, struck at random                                       | 24 seeds of 12 shots, each both ways, every rule on every step                                                                                                         |
-| Bench     | what a frame costs, in five scenes                                                  | `scripts/bench-baseline.json`, ±20% both ways, 0.0002 ms slack                                                                                                         |
+| Gate      | Holds the package to                                                                | Baseline and tolerance                                                                                                                               |
+| --------- | ----------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Format    | prettier's formatting                                                               | none: pass or fail                                                                                                                                   |
+| Types     | strict TypeScript                                                                   | none: pass or fail                                                                                                                                   |
+| Lint      | the type-aware rules                                                                | none: pass or fail                                                                                                                                   |
+| Tests     | every behaviour the README claims                                                   | 199 at v0.8.0 (189 at v0.7.0, 178 at v0.6.0, 143 at v0.5.1, 142 at v0.5.0, 131 at v0.4.3, 127 at v0.4.2, 123 at v0.4.1, 120 at v0.4.0, 30 at v0.3.0) |
+| Unchanged | every game's world as v0.3.0 stepped it, and terrain round level cups as v0.6.0 did | `test/unchanged.json`, bit for bit                                                                                                                   |
+| Fuzzer    | the rules a golf ball keeps, struck at random                                       | 24 seeds of 12 shots, each both ways, every rule on every step                                                                                       |
+| Bench     | what a frame costs, in five scenes                                                  | `scripts/bench-baseline.json`, ±20% both ways, 0.0002 ms slack                                                                                       |
 
 The bench's budgets, in milliseconds a frame on the fastest run, and its
 baselines as written (on an M4 Pro, Node 23.4.0):
