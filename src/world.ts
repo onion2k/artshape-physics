@@ -1637,11 +1637,38 @@ export class World {
     return best;
   }
 
-  /** Whether a body is down a hole: within its radius, and below the floor it is cut in. */
+  /**
+   * Whether a body is down a hole: within its radius, and below the ground
+   * over it, the floor under the hole's middle and the terrain where the
+   * body is. The walls judge a body's height from the terrain under it, and
+   * so must this: judged by the edge in its way, a ball on the downhill side
+   * of a pit on a slope was above the edge and below the ground over it, and
+   * its own tile was a wall to it that snapped it most of a unit sideways.
+   */
   private inPit(i: number, z: number): boolean {
-    for (const h of this.holes)
-      if (Math.hypot(this.x[i] - h.x, this.y[i] - h.y) < h.radius && z < this.floorAt(h.x, h.y)) return true;
+    for (const h of this.holes) {
+      if (Math.hypot(this.x[i] - h.x, this.y[i] - h.y) >= h.radius) continue;
+      const over = this.terrain
+        ? this.stepAt(h.x, h.y) + this.terrainAt(this.x[i], this.y[i])[0]
+        : this.floorAt(h.x, h.y);
+      if (z < over) return true;
+    }
     return false;
+  }
+
+  /**
+   * How high a hole's edge stands in the way (dx, dy) from its middle, `d`
+   * along it: where the hole, a well straight down, meets the ground. On
+   * terrain it is the floor's step under the hole's middle and the terrain at
+   * the edge, higher on the side uphill; with no terrain, or at the middle,
+   * it is `level`, the floor under the hole's middle, as it always was. On
+   * level terrain the two are one sum, so a cup on level ground is met as it
+   * was before its edge could lean.
+   */
+  private edgeAt(h: Hole, level: number, dx: number, dy: number, d: number): number {
+    if (!this.terrain || d < 1e-6) return level;
+    sample(this.terrain, this.grid, h.x + (dx / d) * h.radius, h.y + (dy / d) * h.radius, this.ground);
+    return this.stepAt(h.x, h.y) + this.ground[0];
   }
 
   /** Whether the tile at a point is a wall to a body whose middle is at `z`: rock, off the grid, or a floor above it. */
@@ -2091,9 +2118,12 @@ export class World {
   }
 
   /**
-   * A cup's rim against a ball: the circle of the hole's edge at its level.
-   * The ball is put out of it along the way from the nearest point of it to
-   * its middle, and bounced off by the rim's figure times its kind's bounce.
+   * A cup's rim against a ball: the circle of the hole's edge where it meets
+   * the ground, level on a level floor and leaning with the terrain on a
+   * slope. The ball is put out of it along the way from the point of it in
+   * the ball's way from the middle to its middle, which is the nearest point
+   * of a level rim and near enough the nearest of a leaning one, and bounced
+   * off by the rim's figure times its kind's bounce.
    * A ball rolling beside the cup is clear of it by its radius; one partly
    * over the edge is put inward and up, and tips in; one crossing meets the
    * far side, low and turned back if it has dropped far enough, high and
@@ -2101,23 +2131,33 @@ export class World {
    */
   private rim(i: number, h: Hole, level: number) {
     const { x, y, z, vx, vy, vz, r } = this;
-    // most of the time a ball is nowhere near it: above it or below it by its radius, or outside the square round it
-    const up = z[i] - level,
-      reach = h.radius + r[i];
-    if (up >= r[i] || up <= -r[i]) return;
+    // most of the time a ball is nowhere near it: outside the square round it, or above or below it by its radius
+    const reach = h.radius + r[i];
     const dx = x[i] - h.x,
       dy = y[i] - h.y;
     if (dx > reach || dx < -reach || dy > reach || dy < -reach) return;
     const d = Math.hypot(dx, dy);
     // on the axis the rim is all round it, as far every way, and it is the pit's to hold
     if (d < 1e-6) return;
-    const out = d - h.radius;
-    const gap = Math.hypot(out, up);
-    if (gap >= r[i] || gap < 1e-9) return;
-    const nx = ((dx / d) * out) / gap,
-      ny = ((dy / d) * out) / gap,
+    // the edge in the ball's way from the middle, which on terrain stands as high as the ground there
+    const up = z[i] - this.edgeAt(h, level, dx, dy, d);
+    let nx: number, ny: number, nz: number, pen: number;
+    if (!this.terrain || (this.ground[1] === 0 && this.ground[2] === 0)) {
+      // Level there, the rim's point in the ball's way is the nearest point of it: the rim as it always was, on the
+      // same sums, so a cup on level ground is met exactly as before its rim could lean.
+      if (up >= r[i] || up <= -r[i]) return;
+      const out = d - h.radius;
+      const gap = Math.hypot(out, up);
+      if (gap >= r[i] || gap < 1e-9) return;
+      nx = ((dx / d) * out) / gap;
+      ny = ((dy / d) * out) / gap;
       nz = up / gap;
-    const pen = r[i] - gap;
+      pen = r[i] - gap;
+    } else {
+      const near = this.leaningRim(i, h, dx, dy, d, up);
+      if (!near) return;
+      [nx, ny, nz, pen] = near;
+    }
     x[i] += nx * pen;
     y[i] += ny * pen;
     z[i] += nz * pen;
@@ -2130,6 +2170,58 @@ export class World {
     }
     this.onFloor[i] |= PROPPED;
     if (nz > 0) this.onFloor[i] |= BORNE;
+  }
+
+  /**
+   * The nearest point of a leaning rim to a ball, and the way out of it and
+   * how far the ball is in, or nothing if it is clear. On a slope the rim
+   * rises and falls round the cup, and the point of it in the ball's way from
+   * the middle is not the nearest: taken as it, a ball at the side of a cup on
+   * the steepest ground was put a fifth of a unit into the rim. So it is
+   * slid round the rim toward the ball, a step at a time, each step as far as
+   * the ball lies along the rim from where it has got to, which three steps
+   * bring to the nearest point to far less than a hair. `up` is how high the
+   * ball's middle is above the rim's point in its way, which the step under
+   * the cup and the ground there were read for.
+   */
+  private leaningRim(
+    i: number,
+    h: Hole,
+    dx: number,
+    dy: number,
+    d: number,
+    up: number,
+  ): [number, number, number, number] | null {
+    const r = this.r[i];
+    // a leaning rim is nearer somewhere round than in the ball's way, but never by more than its radius again
+    if (up >= 2 * r || up <= -2 * r) return null;
+    const g = this.ground,
+      step = this.stepAt(h.x, h.y),
+      z = this.z[i];
+    let a = Math.atan2(dy, dx),
+      c = dx / d,
+      s = dy / d,
+      pz = z - up;
+    for (let k = 0; k < 3; k++) {
+      // the way round the rim here, a radian's worth: across, and up as the ground rises that way
+      const tx = -h.radius * s,
+        ty = h.radius * c,
+        tz = g[1] * tx + g[2] * ty;
+      const move =
+        ((dx - h.radius * c) * tx + (dy - h.radius * s) * ty + (z - pz) * tz) / (tx * tx + ty * ty + tz * tz);
+      if (move < 1e-9 && move > -1e-9) break;
+      a += move;
+      c = Math.cos(a);
+      s = Math.sin(a);
+      sample(this.terrain!, this.grid, h.x + h.radius * c, h.y + h.radius * s, g);
+      pz = step + g[0];
+    }
+    const ex = dx - h.radius * c,
+      ey = dy - h.radius * s,
+      ez = z - pz;
+    const gap = Math.sqrt(ex * ex + ey * ey + ez * ez);
+    if (gap >= r || gap < 1e-9) return null;
+    return [ex / gap, ey / gap, ez / gap, r - gap];
   }
 
   /** The floor under a ball, and the holes and bottom: caught and bounced every look, dragged on the last. */
@@ -2149,9 +2241,18 @@ export class World {
       const dx = x[i] - h.x,
         dy = y[i] - h.y;
       const d = Math.hypot(dx, dy);
-      if (d < h.radius) {
-        // over the hole: nothing under it, and the pit's wall around it
-        if (z[i] < level && d > h.radius - r[i]) {
+      let over = d < h.radius;
+      // On a slope a ball touches the ground uphill of its middle, and is over the hole when that is: judged by its
+      // middle, one resting on the ground beside a cup's uphill edge was over it, and fell through the ground. Down
+      // the pit, below its edge, it is the pit's, and its middle says.
+      if (this.terrain && d < h.radius + r[i] && !(over && z[i] < this.edgeAt(h, level, dx, dy, d))) {
+        const g = this.terrainAt(x[i], y[i]);
+        const lean = Math.sqrt(1 + g[1] * g[1] + g[2] * g[2]);
+        over = Math.hypot(dx + (r[i] * g[1]) / lean, dy + (r[i] * g[2]) / lean) < h.radius;
+      }
+      if (over) {
+        // over the hole: nothing under it, and the pit's wall around it, as high as its edge in the ball's way
+        if (d > h.radius - r[i] && z[i] < this.edgeAt(h, level, dx, dy, d)) {
           const nx = dx / d,
             ny = dy / d;
           const fix = d - (h.radius - r[i]);

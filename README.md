@@ -128,12 +128,11 @@ tiles, and what falls into a hole is reported through a callback.
 
   The world will not be made on terrain it cannot keep a ball on, and throws,
   naming the tile: tiles side by side more than half a tile apart, the rock's
-  among them, since each shapes the ground two tiles round it; tiles
-  narrower than the biggest ball; or ground that is not level round a hole as
-  far as its smoothing reaches the ground under a ball on the hole's edge,
-  which on ooergolf's figures is three tiles all round the cup's own. A cup's
-  rim is level, and a rim that leans with a sloping green is still to come.
-  Terrain flat at nothing steps a world exactly as none does.
+  among them, since each shapes the ground two tiles round it; or tiles
+  narrower than the biggest ball. A hole may be cut in any ground it allows,
+  and a cup's rim leans with it: see below. Terrain flat at nothing steps a
+  world exactly as none does, and a cup on level terrain is met exactly as
+  it was before its rim could lean.
 
 - **Surfaces**, one byte a tile beside the rock and the floor's heights, say
   what each tile of floor is made of, from a table of them: how hard it
@@ -164,13 +163,23 @@ tiles, and what falls into a hole is reported through a callback.
   hard the floor slopes toward it, and how far out, are its own `pull` and
   `reach`, 6 and 2.5 unless given.
 
-  A hole given a `rim` is a **cup**: the round edge where it meets the floor
-  is a thing a ball meets, and is put out of and bounced off by the rim's
-  figure. Nothing says by a figure whether a ball drops. A slow ball partly
-  over the edge tips in; one crossing is caught if it has dropped far
-  enough by the far side for the rim to meet it low and turn it back, and
-  runs over if the rim meets it near its bottom and throws it up; one
-  clipping the edge is turned, and may run round it and out. With no pull,
+  On terrain a hole is a well cut straight down into the ground, whatever it
+  slopes, and its edge is where the well meets the ground: higher on the
+  side uphill, lower downhill, and following the ground's curve all round. A
+  ball is over the hole when where it touches the ground is, which on a slope
+  is uphill of its middle, so one resting beside a cup's uphill edge stays
+  on the ground and one leaning over its downhill edge tips in. Down the pit,
+  below the ground over it, it is held in by the pit's wall. Its depth still
+  counts from the ground under its middle.
+
+  A hole given a `rim` is a **cup**: the round edge where it meets the floor,
+  or the ground, is a thing a ball meets, and is put out of at its nearest
+  point and bounced off by the rim's figure. Nothing says by a figure
+  whether a ball drops. A slow ball partly over the edge tips in; one
+  crossing is caught if it has dropped far enough by the far side for the
+  rim to meet it low and turn it back, and runs over if the rim meets it
+  near its bottom and throws it up; one clipping the edge is turned, and
+  may run round it and out. With no pull,
   a rim of 0.3 and a ball of radius 1 rolled through the middle:
 
   | Cup radius | always holed up to | always runs over from |
@@ -280,10 +289,20 @@ it misses; the steepest slope climbed with no wall in it, a step on a hill
 still a wall, and no ball more than a tenth into the sharpest ground there
 may be, however hard it is struck; a coin lying along a slope; the terrain
 refused where the world could not keep a ball on it; and terrain flat at
-nothing stepping a world value for value as none does.
+nothing stepping a world value for value as none does. A cup on a slope: a
+ball resting beside it on every side left be and one over its edge tipped
+in, a putt up and down the slope caught up to a speed and run over faster,
+no ball more than a tenth into its rim on the steepest ground however hard
+it is struck, one landing on it from the air in or thrown off, one thrown
+up inside it held by its uphill wall, one running round its rim held awake
+by sleepSpeed, a cup cut in a raised step and a coin taken by one, a pit
+with no rim that holds what falls in, and a putt that breaks right up to
+the cup and in.
 
 Six scenes, run from seeds, hold the world bit for bit to how v0.3.0 stepped
-it, so a game that has not asked for anything new gets nothing new. The
+it, so a game that has not asked for anything new gets nothing new, and a
+seventh, of balls and coins on terrain round a cup and a hole on level
+ground, to how v0.6.0 stepped it. The
 bench holds a frame's cost in a scene for each game that uses the package: a
 heap churned, a bed of coins pushed, and a golf ball shot round a course,
 alone and sixty-four at once; and in a heap at rest, judged together, which

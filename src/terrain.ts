@@ -153,17 +153,16 @@ export function slopeAt(terrain: Float32Array, grid: Grid, x: number, y: number)
  * steeper than one in two, and curved no more sharply than the ball, so
  * the steepest the tiles may rise from one to the next is half a tile, and
  * a tile may be no narrower than the biggest ball. Every tile counts, the
- * rock's too, since each shapes the ground two tiles round it. And a cup's
- * rim is a level circle, so the ground must be level wherever it shapes the
- * ground under a ball touching a hole's edge: every tile whose smoothing
- * reaches within a hole's radius and two of the biggest ball's of it must
- * have the same height.
+ * rock's too, since each shapes the ground two tiles round it. A hole may
+ * be cut in any ground this allows: its rim is its edge where it meets the
+ * ground, and leans with it. `holes` was for the level ground a cup's rim
+ * once needed, and is kept so a game written against v0.6.0 still builds.
  */
 export function terrainProblem(
   terrain: Float32Array,
   grid: Grid,
   biggest: number,
-  holes: readonly Hole[],
+  _holes: readonly Hole[] = [],
 ): string | null {
   const { cols, rows, tile } = grid;
   if (terrain.length !== cols * rows)
@@ -184,33 +183,5 @@ export function terrainProblem(
           return `The terrain at tile ${tx}, ${ty} is ${shown(Math.abs(rise))} ${rise > 0 ? 'below' : 'above'} tile ${nx}, ${ny}: tiles side by side may differ by at most half a tile, ${steepest}.`;
       }
     }
-  for (let k = 0; k < holes.length; k++) {
-    const hole = holes[k];
-    const reach = hole.radius + 2 * biggest;
-    // a tile's height shapes the ground within two tiles of its middle, either way; past the grid's edge, the edge's
-    const x0 = Math.ceil((hole.x - reach - 2 * tile - grid.originX) / tile - 0.5),
-      x1 = Math.floor((hole.x + reach + 2 * tile - grid.originX) / tile - 0.5),
-      y0 = Math.ceil((hole.y - reach - 2 * tile - grid.originY) / tile - 0.5),
-      y1 = Math.floor((hole.y + reach + 2 * tile - grid.originY) / tile - 0.5);
-    let level: number | null = null,
-      levelAt = '';
-    for (let ty = y0; ty <= y1; ty++)
-      for (let tx = x0; tx <= x1; tx++) {
-        const mx = grid.originX + (tx + 0.5) * tile,
-          my = grid.originY + (ty + 0.5) * tile;
-        // how far the hole's middle is from the square this tile's height shapes
-        const gx = Math.max(0, Math.abs(mx - hole.x) - 2 * tile),
-          gy = Math.max(0, Math.abs(my - hole.y) - 2 * tile);
-        if (Math.hypot(gx, gy) >= reach) continue;
-        const cx = Math.min(cols - 1, Math.max(0, tx)),
-          cy = Math.min(rows - 1, Math.max(0, ty));
-        const h = terrain[cy * cols + cx];
-        if (level === null) {
-          level = h;
-          levelAt = `tile ${cx}, ${cy}`;
-        } else if (h !== level)
-          return `The terrain round hole ${k} is not level: tile ${cx}, ${cy} is at ${shown(h)}, and ${levelAt} at ${shown(level)}. A hole's rim is level, and the ground must be level wherever it shapes the ground under a ball on its edge, ${shown(reach)} from its middle.`;
-      }
-  }
   return null;
 }

@@ -76,17 +76,23 @@ const tile = (tx: number, ty: number) => ty * GRID.cols + tx;
  * The course: a border of rock, a wall of rock, a raised wall, water below
  * the bottom, a bunker, and terrain: a mound three high beyond the wall of
  * rock, by the water, a hollow two and a half deep in the far corner, a bank
- * as steep as terrain may be in the corner by the tee, and the green before
- * the cup falling away across the way to it, with a post standing on the
- * fall. The raised wall stops short of the barrier's path: a
+ * as steep as terrain may be in the corner by the tee, the green before the
+ * cup falling away across the way to it, with a post standing on the fall,
+ * and the cup on the flank of a cone as steep as terrain may be, its rim
+ * leaning with it. The rim's point in the ball's way from the middle is not
+ * its nearest on a slope; taken as it, no rule broke in the 24 seeds the
+ * check plays, on the green or on the cone, and over 200 seeds on the cone
+ * one put a ball 0.102 into the rim. The terrain's own test, on the
+ * steepest ground, holds that more sharply.
+ * The raised wall stops short of the barrier's path: a
  * box driven against a wall with a ball between them has the ball in one or
  * the other, and the rock, looked at last, wins. That is so of any box and
  * any wall, and a course is not to be laid out that way. Nor is a moving box
  * to stand on a slope: with the mound's flank under the windmill's sweep, a
  * ball rolled back against a blade by the slope each time it got ahead of it
  * was carried round by the blades for good, going at the blades' speed. The
- * ground under the barrier, the windmill and the cup is level at nothing, as
- * a game would lay them.
+ * ground under the barrier and the windmill is level at nothing, as a game
+ * would lay them.
  */
 function course() {
   const solid = new Uint8Array(GRID.cols * GRID.rows),
@@ -103,10 +109,12 @@ function course() {
       if (tx >= 10 && tx <= 12 && ty >= 6 && ty <= 8) surface[t] = 1;
       const mound = 3 * Math.max(0, 1 - Math.hypot(tx - 10, ty - 20) / 3),
         hollow = -2.5 * Math.max(0, 1 - Math.hypot(tx - 21, ty - 4) / 3),
-        across = tx >= 15 && tx <= 21 ? 0.4 * (tx - 18) * (ty === 14 ? 1 : ty === 13 || ty === 15 ? 0.5 : 0) : 0;
+        across = tx >= 15 && tx <= 21 ? 0.4 * (tx - 18) * (ty === 14 ? 1 : ty === 13 || ty === 15 ? 0.5 : 0) : 0,
+        // the cup on the flank of a cone as steep as terrain may be, its top two tiles east of the cup
+        cone = Math.max(0, 6 - 1.5 * Math.hypot(tx - 19, ty - 20));
       // a bank as steep as there may be, rising half a tile a tile both ways into the corner by the tee
       const bank = 1.5 * Math.max(0, 8 - tx - ty);
-      terrain[t] = mound + hollow + across + bank;
+      terrain[t] = mound + hollow + across + cone + bank;
     }
   return { solid, floor, terrain, surface };
 }
@@ -287,9 +295,16 @@ function play(seed: number, sleepTogether: boolean): string | null {
         if (d > 0.1) return `${at(s)}: ${d.toFixed(3)} into a post`;
         if (d > reach) near.post = true;
       }
-      // the cup's rim, the circle of its edge at the floor
-      const rim = Math.hypot(Math.hypot(x - CUP.x, y - CUP.y) - CUP.radius, z);
-      if (rim < R - 0.1) return `${at(s)}: ${(R - rim).toFixed(3)} into the cup's rim`;
+      // the cup's rim, the circle of its edge at the ground all round, looked at all round when the ball is near it
+      if (Math.hypot(x - CUP.x, y - CUP.y) < CUP.radius + R + 0.5) {
+        let rim = Infinity;
+        for (let k = 0; k < 180; k++) {
+          const px = CUP.x + CUP.radius * Math.cos((k / 180) * 2 * Math.PI),
+            py = CUP.y + CUP.radius * Math.sin((k / 180) * 2 * Math.PI);
+          rim = Math.min(rim, Math.hypot(x - px, y - py, z - w.floorAt(px, py)));
+        }
+        if (rim < R - 0.1) return `${at(s)}: ${(R - rim).toFixed(3)} into the cup's rim`;
+      }
       // the ground, where the ball is near it and not over the cup
       if (Math.hypot(x - CUP.x, y - CUP.y) > CUP.radius + R && z - w.floorAt(x, y) < 3 * R) {
         const into = intoGround(w, ball, floor);

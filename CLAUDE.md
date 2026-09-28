@@ -60,11 +60,13 @@ The gates, one by one:
 - **Fuzzer:** `test/golf.fuzz.test.ts`, among the tests. A round of golf
   played at random from 24 seeds on a course with everything ooergolf asks
   for, hills among it (a mound, a hollow, a bank as steep as terrain may
-  be, and a green falling away across the way to the cup), each seed
-  twice, each body on its own sleep window and judged together, and after
-  every step: the ball's middle never under the ground or in a wall, never
-  more than a tenth into a box or a post, nor into the terrain on its own
-  step of the floor, never sped up but by gravity or a bumper or a moving
+  be, a green falling away across the way to the cup, and the cup on the
+  flank of a cone as steep as terrain may be, its rim leaning with it),
+  each seed twice, each body on its own sleep window and judged together,
+  and after every step: the ball's middle never under the ground or in a
+  wall, never more than a tenth into a box or a post, nor into the cup's
+  rim, looked at all round, nor into the terrain on its own step of the
+  floor, never sped up but by gravity or a bumper or a moving
   box, never put to sleep going faster than its `sleepSpeed`, reported at
   most once, every shot ended within 30 s, and none asleep sooner than its
   window lets it: a whole window after it was struck, or judged together,
@@ -187,7 +189,10 @@ vz?)`, `setOrientation`, `hit(i, vx, vy, vz)` (or writing `vx`/`vy`/`vz` and
   asked whether a body is a disc. `heightAt` and `slopeAt` from
   `src/terrain` read the terrain alone, and `intoGround(w, i)`, in the
   terrain tests and the fuzzer, says how far a ball is into the ground by
-  looking at the ground all round under it, not by the world's reckoning.
+  looking at the ground all round under it, not by the world's reckoning;
+  `intoRim` does the same for a cup's rim, looking at it all round, and
+  `touching` puts a ball down touching the ground at a point, its middle
+  its radius off along the ground's normal.
 
 ## Edge-case checklist
 
@@ -233,8 +238,9 @@ applies:
   landing on it; never a wall, a step on it still one, judged from the
   ground under the body; whatever reads the floor (`floorAt`) reading the
   ground; a coin lying and sliding along it; the steepest and the sharpest
-  it may be, with nothing more than a tenth into it; a hole on level ground
-  in it; the refusals; and level terrain stepping a world exactly as none.
+  it may be, with nothing more than a tenth into it; a hole cut in it,
+  level and sloping; the refusals; and level terrain stepping a world
+  exactly as none.
 - **Surfaces:** on each surface of a table, a surface the table has no
   entry for (the tuning's figures), a world given no table, and off the
   grid, which is surface 0.
@@ -244,7 +250,11 @@ applies:
   the cost holds with thousands of bodies in the hash.
 - **Holes:** over one, beside one, at the rim, and more than one hole; a
   hole cut in a raised floor; and a cup's rim: tipping in, caught, run over,
-  lipped out, landed on from the air.
+  lipped out, landed on from the air. On terrain, each of those on every
+  side of a cup on a slope, uphill, downhill and across, on the steepest
+  ground there may be; a ball over the hole by where it touches the ground;
+  a ball down the pit below the ground over it, held by the pit's wall under
+  the uphill edge, and no step round it a wall to it.
 - **Pushers:** still, moving, turning (`spin`), swept by the frame's lag, a
   body on the top of one, and the load count.
 - **Frame length:** `step(dt)` with dt of 1/30, 1/60 and 1/144. The
@@ -259,15 +269,15 @@ applies:
 
 ## Gates and baselines
 
-| Gate      | Holds the package to                                                                | Baseline and tolerance                                                                                                 |
-| --------- | ----------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| Format    | prettier's formatting                                                               | none: pass or fail                                                                                                     |
-| Types     | strict TypeScript                                                                   | none: pass or fail                                                                                                     |
-| Lint      | the type-aware rules                                                                | none: pass or fail                                                                                                     |
-| Tests     | every behaviour the README claims                                                   | 178 at v0.6.0 (143 at v0.5.1, 142 at v0.5.0, 131 at v0.4.3, 127 at v0.4.2, 123 at v0.4.1, 120 at v0.4.0, 30 at v0.3.0) |
-| Unchanged | every game's world as v0.3.0 stepped it, and terrain round level cups as v0.6.0 did | `test/unchanged.json`, bit for bit                                                                                     |
-| Fuzzer    | the rules a golf ball keeps, struck at random                                       | 24 seeds of 12 shots, each both ways, every rule on every step                                                         |
-| Bench     | what a frame costs, in five scenes                                                  | `scripts/bench-baseline.json`, ±20% both ways, 0.0002 ms slack                                                         |
+| Gate      | Holds the package to                                                                | Baseline and tolerance                                                                                                                                       |
+| --------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Format    | prettier's formatting                                                               | none: pass or fail                                                                                                                                           |
+| Types     | strict TypeScript                                                                   | none: pass or fail                                                                                                                                           |
+| Lint      | the type-aware rules                                                                | none: pass or fail                                                                                                                                           |
+| Tests     | every behaviour the README claims                                                   | 189 with the leaning rim, unreleased (178 at v0.6.0, 143 at v0.5.1, 142 at v0.5.0, 131 at v0.4.3, 127 at v0.4.2, 123 at v0.4.1, 120 at v0.4.0, 30 at v0.3.0) |
+| Unchanged | every game's world as v0.3.0 stepped it, and terrain round level cups as v0.6.0 did | `test/unchanged.json`, bit for bit                                                                                                                           |
+| Fuzzer    | the rules a golf ball keeps, struck at random                                       | 24 seeds of 12 shots, each both ways, every rule on every step                                                                                               |
+| Bench     | what a frame costs, in five scenes                                                  | `scripts/bench-baseline.json`, ±20% both ways, 0.0002 ms slack                                                                                               |
 
 The bench's budgets, in milliseconds a frame on the fastest run, and its
 baselines as written (on an M4 Pro, Node 23.4.0):
@@ -277,7 +287,7 @@ baselines as written (on an M4 Pro, Node 23.4.0):
 | a heap of 2000 balls churned by two pushers          | pushminer             | 3      | 1.65     |
 | a bed of 1500 discs, timed while the pusher is in it | coinpush              | 4      | 1.24     |
 | one ball shot round a golf course                    | ooergolf              | 0.1    | 0.0019   |
-| 64 balls on that course at 120 u/s                   | ooergolf, at capacity | 1      | 0.055    |
+| 64 balls on that course at 120 u/s                   | ooergolf, at capacity | 1      | 0.058    |
 | a heap of 2000 balls at rest, judged together        | pushminer, at rest    | 0.01   | 0.0006   |
 
 The tolerance is the measured wobble with room to spare: over three runs
@@ -285,10 +295,13 @@ no scene moved by more than 7%. The golf scenes grow as the golf features
 land, and each baseline is written again then, saying why. The churned
 heap's was written again at v0.5.1, when a world with no discs was given
 back the sixth of a frame it had cost since v0.3.0. The golf scenes' were
-written again when terrain landed and the course was given hills: the
-round is timed over 3000 frames, since its twelve shots take 2800 now,
-and 64 balls cost a third more, nearly all of it reading the ground, as
-the course with its terrain flat at nothing measured.
+written again when terrain landed and the course was given hills: 64
+balls cost a third more, nearly all of it reading the ground, as the
+course with its terrain flat at nothing measured. They were written again
+when a cup's rim could lean and the course's cup was put on a slope: the
+round is timed over 3600 frames, since its twelve shots take 3520 now,
+and 64 balls end with 58 awake where they ended with 60, at a cost within
+the wobble of what it was.
 
 ## Releasing
 

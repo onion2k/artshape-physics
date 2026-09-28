@@ -7,7 +7,7 @@
  * or to leaving a world without it exactly as it was.
  */
 import { describe, expect, it } from 'vitest';
-import { heightAt, slopeAt } from '../src/terrain';
+import { heightAt, slopeAt, terrainProblem } from '../src/terrain';
 import {
   BOTTOM,
   DEFAULT_TUNING,
@@ -743,16 +743,15 @@ describe('a hole in the terrain', () => {
     expect(() => world({ terrain: terrainOf(() => 0), radii: [1, 1.5] })).not.toThrow();
   });
 
-  it('refuses a hole that is not on level ground out as far as the smoothing reaches a ball touching its edge', () => {
-    // level for three tiles all round the cup's own, and rising beyond
-    const pad = (tx: number, ty: number) => Math.max(Math.abs(tx - GREEN_GRID.tx), Math.abs(ty - GREEN_GRID.ty));
-    const terrain = terrainOf((tx, ty) => 0.5 * Math.max(0, pad(tx, ty) - 3));
-    expect(() => world({ terrain, holes: [cup()] })).not.toThrow();
-    // a tile three out, whose smoothing reaches a ball on the edge, raised a hair
-    terrain[GREEN_GRID.ty * GRID.cols + GREEN_GRID.tx + 3] = 0.01;
-    expect(() => world({ terrain, holes: [cup()] })).toThrow(/hole 0.*tile 33, 15/);
-    // and one on a slope, anywhere near it
-    expect(() => world({ terrain: incline(0.01), holes: [cup()] })).toThrow(/hole 0/);
+  it('takes a cup on a slope, however steep terrain may be, and still refuses what it refused', () => {
+    const steepest = terrainOf((tx, ty) => 1.5 * (tx + ty));
+    for (const terrain of [incline(0.01), incline(0.5), steepest])
+      expect(terrainProblem(terrain, GRID, R, [cup()])).toBeNull();
+    expect(() => world({ terrain: steepest, holes: [cup()] })).not.toThrow();
+    // a slope a hair too steep beside the cup is refused as anywhere
+    const cliff = incline(0.1);
+    cliff[GREEN_GRID.ty * GRID.cols + GREEN_GRID.tx + 3] += 1.6;
+    expect(() => world({ terrain: cliff, holes: [cup()] })).toThrow(/half a tile/);
   });
 
   it('is cut level in a hilltop, and takes what rolls into it', () => {
@@ -821,6 +820,316 @@ describe('a hole in the terrain', () => {
  */
 const PUTT = 46;
 const ABOVE = 11.5;
+
+describe('a cup on a slope', () => {
+  /** The cup, in the middle of the grid, as ooergolf has it. */
+  const AT = { x: middle(20), y: middle(15) };
+  const cupAt = (over: Partial<Hole> = {}): Hole => ({ x: AT.x, y: AT.y, ...CUP, ...over });
+  /** The steepest ground there may be, rising half a tile a tile both ways at once: thirty-five degrees. */
+  const STEEPEST = terrainOf((tx, ty) => 1.5 * (tx + ty));
+
+  /**
+   * How far a ball is into the rim at the deepest, found by looking at the
+   * rim all round, not by the world's reckoning: its radius, less how near its
+   * middle comes to the cup's edge, a circle at the ground's height all round.
+   * `step` is the floor's step under the cup's middle.
+   */
+  function intoRim(w: World, i: number, terrain: Float32Array, step = 0): number {
+    let nearest = Infinity;
+    for (let k = 0; k < 180; k++) {
+      const a = (k / 180) * 2 * Math.PI;
+      const px = AT.x + CUP.radius * Math.cos(a),
+        py = AT.y + CUP.radius * Math.sin(a);
+      nearest = Math.min(
+        nearest,
+        Math.hypot(w.x[i] - px, w.y[i] - py, w.z[i] - step - heightAt(terrain, GRID, px, py)),
+      );
+    }
+    return R - nearest;
+  }
+
+  /** A ball at rest on the ground, touching it at a point: its middle its radius from that point, along the ground's normal. */
+  function touching(w: World, terrain: Float32Array, px: number, py: number): number {
+    const [sx, sy] = slopeAt(terrain, GRID, px, py);
+    const l = Math.hypot(sx, sy, 1);
+    return w.spawn(0, px - (R * sx) / l, py - (R * sy) / l, w.floorAt(px, py) + R / l);
+  }
+
+  /** Round the cup at eight angles: where a ball touches the ground `out` beyond its edge, and which side that is. */
+  const sides = (out: number) =>
+    [0, 1, 2, 3, 4, 5, 6, 7].map((k) => {
+      const a = (k / 8) * 2 * Math.PI;
+      return {
+        x: AT.x + (CUP.radius + out) * Math.cos(a),
+        y: AT.y + (CUP.radius + out) * Math.sin(a),
+        side: `${k * 45}° round, uphill along x`,
+      };
+    });
+
+  it('leaves be a ball at rest beside it on every side, the ground leaning, and tips in one partly over its edge', () => {
+    // a slope the green holds a ball on; the rim is the cup's edge where it meets the ground, higher uphill
+    const terrain = incline(0.2);
+    for (const { x, y, side } of sides(0.1)) {
+      const w = world({ terrain, holes: [cupAt()], surfaces: [GREEN] });
+      const i = touching(w, terrain, x, y);
+      const x0 = w.x[i],
+        y0 = w.y[i];
+      let holed = false;
+      run(w, 2, () => (holed = true));
+      expect(holed, side).toBe(false);
+      expect(w.asleep[i], side).toBe(1);
+      expect(Math.hypot(w.x[i] - x0, w.y[i] - y0), side).toBeLessThan(0.01);
+    }
+    // half a unit over the edge: on the downhill side a ball touching a fifth over it has its middle all but above
+    // the edge, balanced on it, and is put to sleep there as a ball balanced anywhere is
+    for (const { x, y, side } of sides(-0.5)) {
+      const w = world({ terrain, holes: [cupAt()], surfaces: [GREEN] });
+      touching(w, terrain, x, y);
+      let holed = false;
+      run(w, 2, () => (holed = true));
+      expect(holed, side).toBe(true);
+    }
+  });
+
+  it('catches a putt up and down the slope through its middle up to a speed, and runs it over faster', () => {
+    const speeds = [2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 25, 30, 35, 40, 50, 60, 80, 120];
+    for (const slope of [0.1, 0.3])
+      for (const way of [1, -1]) {
+        const terrain = incline(slope);
+        const results = speeds.map((speed) => {
+          // on ooergolf's green, from six back: on ground with no roll, eight down a slope of 0.3, the slowest putt
+          // reached the cup at eighteen a second, faster than it catches
+          const w = world({ terrain, holes: [cupAt()], surfaces: [GREEN] });
+          const i = touching(w, terrain, AT.x - 6 * way, AT.y);
+          w.hit(i, speed * way, 0, 0);
+          let holed = false;
+          for (let f = 0; f < 240 && w.alive[i]; f++) {
+            w.step(DT, () => (holed = true));
+            if (w.alive[i] && (w.x[i] - AT.x) * way > CUP.radius + R + 1) break;
+          }
+          return { speed, holed, over: w.alive[i] && (w.x[i] - AT.x) * way > CUP.radius + R };
+        });
+        const where = `${way > 0 ? 'up' : 'down'} a slope of ${slope}`;
+        const reaching = results.filter((r) => r.holed || r.over);
+        const firstMissed = reaching.findIndex((r) => !r.holed),
+          lastHoled = reaching.map((r) => r.holed).lastIndexOf(true);
+        expect(firstMissed, `${where}: holed at the slowest that gets there`).toBeGreaterThan(0);
+        expect(lastHoled, `${where}: over at the fastest`).toBeLessThan(reaching.length - 1);
+        for (const r of reaching.slice(0, firstMissed)) expect(r.holed, `${where}, ${r.speed} u/s`).toBe(true);
+        for (const r of reaching.slice(lastHoled + 1)) expect(r.over, `${where}, ${r.speed} u/s`).toBe(true);
+      }
+  });
+
+  it('never lets a ball more than a tenth into its rim, however steep the ground, however hard it is struck at it', () => {
+    let deepest = 0,
+      worst = '';
+    for (const [name, terrain] of [
+      ['a slope of a half', incline(0.5)],
+      ['the steepest', STEEPEST],
+    ] as const)
+      for (const speed of [5, 15, 30, 60, 120, 240])
+        for (let k = 0; k < 8; k++)
+          for (const off of [-1.2, -0.6, 0, 0.6, 1.2]) {
+            const from = (k / 8) * 2 * Math.PI;
+            const w = world({ terrain, holes: [cupAt()], surfaces: [GREEN] });
+            // six back from the middle, struck at it past it by `off`, square to the way
+            const i = touching(w, terrain, AT.x + 6 * Math.cos(from), AT.y + 6 * Math.sin(from));
+            const tx = AT.x - off * Math.sin(from) - w.x[i],
+              ty = AT.y + off * Math.cos(from) - w.y[i];
+            const d = Math.hypot(tx, ty);
+            w.hit(i, (speed * tx) / d, (speed * ty) / d, 0);
+            for (let s = 0; s < 1.5 / STEP && w.alive[i]; s++) {
+              w.step(STEP, nothing);
+              if (!w.alive[i] || Math.hypot(w.x[i] - AT.x, w.y[i] - AT.y) > CUP.radius + R + 0.5) continue;
+              const into = intoRim(w, i, terrain);
+              if (into > deepest) {
+                deepest = into;
+                worst = `${name}, from ${k * 45}° at ${speed} u/s, ${off} off, step ${s}`;
+              }
+            }
+          }
+    expect(deepest, worst).toBeLessThan(0.1);
+  });
+
+  it('takes a ball that lands on it from the air, and throws off or in one that lands on its rim, never through it', () => {
+    for (const terrain of [incline(0.3), STEEPEST])
+      for (const out of [-0.4, 0, 0.4])
+        for (const { x, y, side } of sides(out)) {
+          const w = world({ terrain, holes: [cupAt()], surfaces: [GREEN] });
+          const i = w.spawn(0, x, y, w.floorAt(x, y) + 6);
+          let deepest = 0;
+          for (let f = 0; f < 120 && w.alive[i]; f++) {
+            w.step(DT, nothing);
+            if (w.alive[i]) deepest = Math.max(deepest, intoRim(w, i, terrain));
+          }
+          expect(deepest, `${side}, ${out} out`).toBeLessThan(0.02);
+        }
+    const w = world({ terrain: STEEPEST, holes: [cupAt()] });
+    w.spawn(0, AT.x, AT.y, w.floorAt(AT.x, AT.y) + 6);
+    let holed = false;
+    run(w, 2, () => (holed = true));
+    expect(holed).toBe(true);
+  });
+
+  it('holds a ball in against its uphill wall, below the edge there and above the level of its middle', () => {
+    // thrown up the slope inside the pit, a hair below the uphill edge and so above the middle's level: the wall
+    // under the edge stops it, and it drops
+    const terrain = incline(0.4);
+    for (const speed of [5, 20, 60]) {
+      const w = world({ terrain, holes: [cupAt()], surfaces: [GREEN] });
+      const edge = w.floorAt(AT.x + CUP.radius, AT.y);
+      const i = w.spawn(0, AT.x + CUP.radius - R - 0.05, AT.y, edge - 0.3, speed, 0, 0);
+      let holed = false,
+        furthest = 0;
+      for (let f = 0; f < 120 && w.alive[i]; f++) {
+        w.step(DT, () => (holed = true));
+        if (w.alive[i]) furthest = Math.max(furthest, w.x[i] - AT.x);
+      }
+      expect(holed, `${speed} u/s`).toBe(true);
+      expect(furthest, `${speed} u/s`).toBeLessThan(CUP.radius - R + 0.01);
+    }
+  });
+
+  it('holds a ball running round inside its rim awake by sleepSpeed, and drops it', () => {
+    // In the cup's mouth on a slope of a tenth, held up by the rim and sent round it at twelve a second: found by
+    // trying 720 such balls, four of which were put to sleep going fast without the option, as a ball in a level
+    // cup once was. This one slept going at eight.
+    const terrain = incline(0.1);
+    const round = (sleepSpeed: number) => {
+      const w = world({ terrain, holes: [cupAt()], tuning: { sleepSpeed } });
+      const x = AT.x,
+        y = AT.y + 0.56;
+      const i = w.spawn(0, x, y, w.floorAt(x, y) + 0.3, -12, 0, -1.6);
+      let holed = false,
+        sleptGoing = 0;
+      for (let f = 0; f < 240 && w.alive[i]; f++) {
+        const going = speedOf(w, i);
+        w.step(DT, () => (holed = true));
+        if (w.alive[i] && w.asleep[i]) sleptGoing = Math.max(sleptGoing, going);
+      }
+      return { holed, sleptGoing };
+    };
+    expect(round(Infinity).sleptGoing, 'without it, asleep going fast').toBeGreaterThan(5);
+    const held = round(GOLF.sleepSpeed);
+    expect(held.sleptGoing, 'with it, never asleep going faster').toBe(0);
+    expect(held.holed, 'and down the cup').toBe(true);
+  });
+
+  it('is cut in a raised step on a slope: its rim on the ground, and a ball taken at its depth from the ground under its middle', () => {
+    // a step two high for five tiles all round the cup, on a slope
+    const terrain = incline(0.2);
+    const floor = terrainOf((tx, ty) => (Math.max(Math.abs(tx - 20), Math.abs(ty - 15)) <= 5 ? 2 : 0));
+    const beside = world({ terrain, floor, holes: [cupAt()], surfaces: [GREEN] });
+    const b = touching(beside, terrain, AT.x - CUP.radius - 0.1, AT.y);
+    const was = beside.x[b];
+    run(beside, 2);
+    expect(beside.asleep[b]).toBe(1);
+    expect(beside.x[b]).toBeCloseTo(was, 2);
+    const w = world({ terrain, floor, holes: [cupAt()], surfaces: [GREEN] });
+    const i = touching(w, terrain, AT.x - 7, AT.y);
+    // up the slope, which with the green's roll slows it at thirty a second a second
+    w.hit(i, 20, 0, 0);
+    let over = -1,
+      taken = -1;
+    for (let s = 0; s < 3 / STEP; s++) {
+      w.step(STEP, (_kind, _x, _y, _slot, hole) => {
+        if (hole === 0) taken = s;
+      });
+      if (over < 0 && w.alive[i] && Math.hypot(w.x[i] - AT.x, w.y[i] - AT.y) < CUP.radius) over = s;
+    }
+    expect(taken).toBeGreaterThan(0);
+    // four down from the ground at its middle to its depth, less the three it is taken short of: a third of a second
+    expect(taken - over).toBeLessThan(50);
+  });
+
+  it('takes a coin slid over its edge on a slope, at its depth from the ground under its middle', () => {
+    const terrain = incline(0.2);
+    const w = new World({
+      capacity: 2,
+      grid: GRID,
+      solid: walled(),
+      radii: [0.42],
+      thickness: [0.24],
+      holes: [cupAt()],
+      random: seeded(8),
+      terrain,
+    });
+    // dropped flat with its middle a third over the edge, downhill and uphill: felt stops a coin slid within half a unit
+    const taken: number[] = [];
+    for (const side of [-1, 1]) {
+      const x = AT.x + side * (CUP.radius - 0.3);
+      const i = w.spawn(0, x, AT.y, w.floorAt(x, AT.y) + 0.3);
+      w.setOrientation(i, 0, 0, 0, 1);
+      run(w, 2, (_kind, _x, _y, slot, hole) => taken.push(slot, hole));
+      expect(w.alive[i], `${side > 0 ? 'uphill' : 'downhill'}`).toBe(0);
+    }
+    expect(taken).toEqual([0, 0, 0, 0]);
+  });
+
+  it('holds a ball in the pit of a hole with no rim on a slope, a step round it no wall to it', () => {
+    // floor steps given, all at nothing, so the steps are looked at as walls about a ball down the hole
+    const terrain = incline(0.3);
+    const floor = new Float32Array(TILES);
+    // dropped in on the uphill side, where the ground over the pit stands above its middle's level, and elsewhere
+    for (const d of [0, 1.4, -1.4]) {
+      const w = world({ terrain, floor, holes: [cupAt({ rim: undefined, radius: 2.5 })] });
+      const x = AT.x + d,
+        y = AT.y;
+      const i = w.spawn(0, x, y, w.floorAt(x, y) + 3);
+      let jumped = 0,
+        holed = false,
+        lastX = w.x[i];
+      for (let s = 0; s < 1.5 / STEP && w.alive[i]; s++) {
+        w.step(STEP, () => (holed = true));
+        if (!w.alive[i]) break;
+        jumped = Math.max(jumped, Math.abs(w.x[i] - lastX));
+        lastX = w.x[i];
+        // inside the pit's wall all the way down
+        expect(Math.hypot(w.x[i] - AT.x, w.y[i] - AT.y), `${d} out`).toBeLessThan(2.5 - R + 0.01);
+        expect(w.y[i], `${d} out`).toBeCloseTo(y, 5);
+      }
+      expect(holed, `${d} out`).toBe(true);
+      expect(jumped, `${d} out`).toBeLessThan(0.3);
+    }
+  });
+
+  // The putt the tilted rim is for: across a green falling away through the cup itself, aimed above it, it breaks
+  // down into it; aimed at it, it misses below; on a flat green the putt that dropped misses.
+  it('takes a putt that breaks right up to it and into it', () => {
+    const green = terrainOf((_, ty) => 0.1 * GRID.tile * (ty - 15));
+    const putt = (terrain: Float32Array, aim: number) => {
+      const w = world({ terrain, holes: [cupAt()], surfaces: [GREEN] });
+      const i = touching(w, terrain, AT.x - 50, AT.y);
+      const dx = AT.x - w.x[i],
+        dy = AT.y + aim - w.y[i];
+      const d = Math.hypot(dx, dy);
+      w.hit(i, (SLOPED_PUTT * dx) / d, (SLOPED_PUTT * dy) / d, 0);
+      let holed = false;
+      run(w, 6, (_kind, _x, _y, _slot, hole) => (holed = hole === 0));
+      return { holed, y: w.y[i] };
+    };
+    expect(putt(green, SLOPED_ABOVE).holed).toBe(true);
+    const straight = putt(green, 0);
+    expect(straight.holed).toBe(false);
+    expect(straight.y).toBeLessThan(AT.y);
+    expect(
+      putt(
+        terrainOf(() => 0),
+        SLOPED_ABOVE,
+      ).holed,
+    ).toBe(false);
+  });
+});
+
+/**
+ * How hard the putt across a green falling away through the cup is struck,
+ * from fifty back, and how far above it it is aimed: found by putting, and
+ * fixed in the middle of the aims that drop at this speed, which run from
+ * 9.75 to 12.75 above it. At 39.5 none drops, short; at 42 the window has
+ * moved down to 8.25 to 9.
+ */
+const SLOPED_PUTT = 40.5;
+const SLOPED_ABOVE = 11.25;
 
 describe('a world without terrain', () => {
   it('steps exactly as one given terrain flat at nothing', () => {

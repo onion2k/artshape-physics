@@ -351,13 +351,15 @@ const COURSE = {
   bunker: { tx: [10, 13], ty: [6, 9] },
   /**
    * The terrain, a height a tile: a mound three high east of the fairway, a hollow two and a half deep in the
-   * far west corner with a post in it, and the green beyond the wall falling away along y, a post on the fall.
-   * The ground under the tee, the windmill, the barrier and round the cup is level, as the game lays them.
+   * far west corner with a post in it, the green beyond the wall falling away along y, a post on the fall, and the
+   * green round the cup falling away along x through it, its rim leaning with it. The ground under the tee, the
+   * windmill and the barrier is level, as the game lays them.
    */
   terrain: (tx: number, ty: number) =>
     3 * Math.max(0, 1 - Math.hypot(tx - 18, ty - 4) / 3.5) -
     2.5 * Math.max(0, 1 - Math.hypot(tx - 4, ty - 20) / 3) +
-    (tx >= 16 && tx <= 22 && ty >= 17 && ty <= 22 ? 0.4 * (ty - 19.5) * (tx === 16 || tx === 22 ? 0.5 : 1) : 0),
+    (tx >= 16 && tx <= 22 && ty >= 17 && ty <= 22 ? 0.4 * (ty - 19.5) * (tx === 16 || tx === 22 ? 0.5 : 1) : 0) +
+    (tx >= 9 && tx <= 15 && ty >= 13 && ty <= 15 ? 0.4 * (tx - 12) * (ty === 13 ? 0.5 : 1) : 0),
   /** The wall: one row of rock tiles from the west border to the middle, leaving the east side open. */
   wall: { row: 16, to: 13 },
   /** The barrier: a bar a quarter of a unit half-thick, going to and fro along x across the way up the open side. */
@@ -475,10 +477,10 @@ function course(seed: number) {
 /**
  * One ball shot round the course: at each speed in turn, in each direction,
  * each shot taken from where the last came to rest, as a round is played.
- * The twelve take 2800 frames with the hills on the course, 2420 before
- * them with the bumpers, the bunker, the pieces and the smooth walls, and
- * 2240 before any of those, so the timing, at 3000, runs a little way into
- * the first again.
+ * The twelve take 3520 frames with the cup's green leaning, 2800 with it
+ * level and hills elsewhere, 2420 before the hills with the bumpers, the
+ * bunker, the pieces and the smooth walls, and 2240 before any of those, so
+ * the timing, at 3600, runs a little way into the first again.
  */
 function round(seed: number) {
   const { world, step } = course(seed);
@@ -563,7 +565,7 @@ const SCENES: Scene[] = [
   {
     name: 'one ball shot round a golf course',
     budget: 0.1,
-    frames: 3000,
+    frames: 3600,
     setup: () => round(1),
   },
   {
