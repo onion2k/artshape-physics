@@ -53,7 +53,9 @@ The gates, one by one:
 - **Tests:** `vitest run`. Every behaviour the README claims has a test.
   `test/settle.test.ts` counts heaps coming to rest over runs of seeds,
   judged together and each on its own window, in a file of its own so it
-  runs beside the rest.
+  runs beside the rest. A test is allowed 30 s, set in `vitest.config.ts`,
+  only so one that never ends is caught: the heaviest take 4 s on a quiet
+  machine and 6 on a busy one, and speed is the bench's to hold.
 - **Fuzzer:** `test/golf.fuzz.test.ts`, among the tests. A round of golf
   played at random from 24 seeds on a course with everything ooergolf asks
   for, each seed twice, each body on its own sleep window and judged
