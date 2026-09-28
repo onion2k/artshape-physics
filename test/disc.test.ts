@@ -7,7 +7,7 @@
  * a floor of the test's own making, and whatever it puts on it.
  */
 import { describe, expect, it } from 'vitest';
-import { BOTTOM, DEFAULT_TUNING, World, type Grid, type Pusher, type WorldOptions } from '../src/world';
+import { BOTTOM, DEFAULT_TUNING, World, type Bumper, type Grid, type Pusher, type WorldOptions } from '../src/world';
 
 const DT = 1 / 60;
 const GRID: Grid = { cols: 40, rows: 40, originX: -20, originY: -20, tile: 1 };
@@ -762,5 +762,89 @@ describe('a disc', () => {
       return [...w.x, ...w.y, ...w.z, ...w.vx, ...w.q];
     };
     expect(push({ restitution: 0.9, carry: 0 })).toEqual(push({}));
+  });
+
+  /** Coins in a bed driven by a box into a post at (4, 0), a unit across the middle. */
+  const intoPost = (post: Partial<Bumper>) => {
+    const w = world();
+    w.bumpers = [{ x: 4, y: 0, radius: 1, top: 2, restitution: 1.3, ...post }];
+    for (let gx = 0; gx < 4; gx++) for (let gy = 0; gy < 6; gy++) flat(w, -1 + gx * 0.86, -2.2 + gy * 0.86, H / 2);
+    run(w, 0.5);
+    let x = -3;
+    let prev: Pusher | null = null;
+    for (let f = 0; f < 150; f++) {
+      if (f < 90) x += 3 * DT;
+      const p: Pusher = {
+        x,
+        y: 0,
+        z: 0.5,
+        yaw: 0,
+        hx: 0.3,
+        hy: 4,
+        hz: 0.5,
+        vx: prev ? (x - prev.x) / DT : 0,
+        vy: 0,
+        spin: 0,
+        px: x,
+        py: 0,
+        owner: 0,
+      };
+      w.pushers = [p];
+      w.wakeNear(x + 1, 0, 6);
+      w.step(DT, () => {});
+      prev = p;
+    }
+    run(w, 2);
+    return w;
+  };
+
+  it('is kept out of a post it is pushed into, as it is out of a face of a box, and never bounced by it', () => {
+    const w = intoPost({});
+    let deepest = 0;
+    for (let i = 0; i < w.count; i++) {
+      // how far out the coin reaches toward the post's axis, by how it is turned
+      const ux = 4 - w.x[i],
+        uy = -w.y[i];
+      const d = Math.hypot(ux, uy);
+      const [ax, ay] = w.axis(i);
+      const toward = Math.abs((ax * ux + ay * uy) / d);
+      const reach = R * Math.sqrt(1 - toward * toward) + (H / 2) * toward;
+      deepest = Math.max(deepest, 1 + reach - d);
+    }
+    expect(deepest).toBeLessThan(0.05);
+    // a coin does not bounce, so the post's restitution is nothing to it
+    const dead = intoPost({ restitution: 0 });
+    expect([...dead.x, ...dead.y, ...dead.z, ...dead.q]).toEqual([...w.x, ...w.y, ...w.z, ...w.q]);
+  });
+
+  it('asleep against a post and shoved into it by a box, is out of the post from the step it is shoved', () => {
+    const w = world();
+    w.bumpers = [{ x: 0, y: 0, radius: 1, top: 2, restitution: 1 }];
+    const i = flat(w, -(1 + R + 0.01), 0, H / 2);
+    run(w, 1);
+    expect(w.asleep[i]).toBe(1);
+    // the box's face at the coin's rim, and coming on at 12 u/s, a tenth of a unit a step: twice what a coin may be
+    // into anything at rest, from the first step
+    let x = w.x[i] - R - 0.3,
+      deepest = 0;
+    for (let s = 0; s < 30; s++) {
+      x += 12 / 120;
+      w.pushers = [
+        { x, y: 0, z: 0.5, yaw: 0, hx: 0.3, hy: 0.5, hz: 0.5, vx: 12, vy: 0, spin: 0, px: x, py: 0, owner: 0 },
+      ];
+      w.step(1 / 120, () => {});
+      deepest = Math.max(deepest, 1 + R - Math.hypot(w.x[i], w.y[i]));
+    }
+    expect(deepest).toBeLessThan(0.05);
+  });
+
+  it('dropped on the top of a post, lies flat on it and sleeps', () => {
+    const w = world({ tuning: { cell: 1.2, sleepInAir: false } });
+    w.bumpers = [{ x: 0, y: 0, radius: 1, top: 2, restitution: 1 }];
+    const i = flat(w, 0, 0, 3);
+    run(w, 3);
+    expect(w.z[i]).toBeCloseTo(2 + H / 2, 1);
+    expect(tilt(w, i)).toBeLessThan(0.05);
+    expect(w.asleep[i]).toBe(1);
   });
 });

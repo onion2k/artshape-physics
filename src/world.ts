@@ -250,6 +250,22 @@ interface Placed {
   reach: number;
 }
 
+/**
+ * A round post that never moves: a bumper. It stands from below everything
+ * up to `top`, a height in the world, flat on top, and bounces a ball off its
+ * side and the round edge of its top by its restitution, which may be over
+ * one, times the ball's kind's bounce. Its top is a floor to what lands on
+ * it, and bounces as the floor does: at over one, a ball dropped on it would
+ * come back higher each time, without end.
+ */
+export interface Bumper {
+  x: number;
+  y: number;
+  radius: number;
+  top: number;
+  restitution: number;
+}
+
 /** A strip of floor that carries what rests on it. */
 export interface Belt {
   cx: number;
@@ -301,6 +317,8 @@ export class World {
   private readonly free: number[] = [];
 
   pushers: Pusher[] = [];
+  /** The posts, read every step, like the pushers and the belts. */
+  bumpers: Bumper[] = [];
   belts: Belt[] = [];
   /** How many bodies the pushers were shoving on the last step: the blade's load. */
   load = 0;
@@ -661,6 +679,8 @@ export class World {
       if (!alive[i] || carried[i] || asleep[i]) continue;
       // one a blade or belt has already moved this step is kept out of the rock, and no more
       if (seen[i]) {
+        if (this.h[i] > 0) for (const b of this.bumpers) this.discBump(i, b);
+        else if (this.bumpers.length) this.bump(i);
         this.walls(i);
         if (this.h[i] > 0) this.discs!.finish(i);
         continue;
@@ -670,6 +690,8 @@ export class World {
         continue;
       }
       this.push(i);
+      // most worlds have no posts, and a heap of their balls is not made to ask of each one
+      if (this.bumpers.length) this.bump(i);
       this.belt(i);
       this.pull(i);
       // the rock last, after everything else that moves it, so nothing is left in it
@@ -1015,6 +1037,7 @@ export class World {
   private stepDisc(i: number, collect: Collect) {
     const d = this.discs!;
     for (const o of this.placed) this.discBox(i, o);
+    for (const b of this.bumpers) this.discBump(i, b);
     // the rock moves it like any contact: put out of it, and no faster for having been put
     const wasX = this.x[i],
       wasY = this.y[i];
@@ -1420,6 +1443,119 @@ export class World {
         return;
       }
     }
+  }
+
+  /**
+   * The posts a ball meets. Each stands from below everything up to its top,
+   * flat there, and the ball is put out of whichever of it is nearest its
+   * middle, the side, the top or the round edge between, and bounced off the
+   * side and the edge by the post's restitution times its kind's bounce, so a
+   * ball clipping the edge in flight is thrown up by it; off the top, by the
+   * floor's. A post never moves, so it wakes
+   * nothing, and only a ball already awake is looked at.
+   */
+  private bump(i: number) {
+    const { x, y, z, vx, vy, vz, r } = this;
+    const rad = r[i];
+    for (const b of this.bumpers) {
+      const dx = x[i] - b.x,
+        dy = y[i] - b.y,
+        dz = z[i] - b.top;
+      const reach = b.radius + rad;
+      if (dx > reach || dx < -reach || dy > reach || dy < -reach || dz >= rad) continue;
+      const d = Math.hypot(dx, dy);
+      // the way out of the post from the ball's middle, and how far the middle is from the post along it
+      let nx = 0,
+        ny = 0,
+        nz = 0,
+        gap: number,
+        onTop = false;
+      if (dz > 0 && d > b.radius) {
+        // above the top and out past its edge: the edge is nearest
+        const ex = (dx / d) * (d - b.radius),
+          ey = (dy / d) * (d - b.radius);
+        gap = Math.hypot(ex, ey, dz);
+        nx = ex / gap;
+        ny = ey / gap;
+        nz = dz / gap;
+      } else if (dz > 0 || b.radius - d >= -dz) {
+        // above the top and within it, or inside the post and nearer its top than its side: the top
+        nz = 1;
+        gap = dz;
+        onTop = true;
+      } else {
+        // beside it, or inside it and nearer its side: the side
+        if (d > 1e-6) {
+          nx = dx / d;
+          ny = dy / d;
+        } else nx = 1;
+        gap = d - b.radius;
+      }
+      if (gap >= rad) continue;
+      const pen = rad - gap;
+      x[i] += nx * pen;
+      y[i] += ny * pen;
+      z[i] += nz * pen;
+      const vn = vx[i] * nx + vy[i] * ny + vz[i] * nz;
+      if (vn < 0) {
+        const e =
+          -vn > this.tune.bounceFrom
+            ? (onTop ? this.tune.restitution : b.restitution) * this.kindBounce[this.kind[i]]
+            : 0;
+        vx[i] -= nx * vn * (1 + e);
+        vy[i] -= ny * vn * (1 + e);
+        vz[i] -= nz * vn * (1 + e);
+      }
+      // what it holds up is held up, and on its flat top a ball lies flat, as on a box's
+      if (nz > 0) this.onFloor[i] |= BORNE;
+      if (nz > 0.5) this.onFloor[i] |= 2;
+    }
+  }
+
+  /**
+   * A post against a disc. Its top and edge are the plane touching the post
+   * at the point nearest the disc's middle, as a box's face is to one, and the
+   * disc's rim is put out of it; so a coin lies flat on the top. Its side is
+   * rock to a disc: the disc is put out of it by where its middle is, its
+   * radius from the side, and it is noted as moved and not thrown. Met as a
+   * plane, a coin a box shoved against the side was backed by the box, and
+   * the box won, and drove it through the post. A disc does not bounce.
+   */
+  private discBump(i: number, b: Bumper) {
+    const d = this.discs!;
+    const bound = d.bound[i];
+    const dx = this.x[i] - b.x,
+      dy = this.y[i] - b.y,
+      dz = this.z[i] - b.top;
+    const reach = b.radius + bound;
+    if (dx > reach || dx < -reach || dy > reach || dy < -reach || dz >= bound) return;
+    const dist = Math.hypot(dx, dy);
+    let px: number, py: number, pz: number, nx: number, ny: number, nz: number;
+    if (dz > 0 && dist > b.radius) {
+      px = b.x + (dx / dist) * b.radius;
+      py = b.y + (dy / dist) * b.radius;
+      pz = b.top;
+      const gap = Math.hypot(this.x[i] - px, this.y[i] - py, dz);
+      nx = (this.x[i] - px) / gap;
+      ny = (this.y[i] - py) / gap;
+      nz = dz / gap;
+    } else if (dz > 0 || b.radius - dist >= -dz) {
+      px = this.x[i];
+      py = this.y[i];
+      pz = b.top;
+      nx = ny = 0;
+      nz = 1;
+    } else {
+      const out = b.radius + this.r[i] - dist;
+      if (out <= 0) return;
+      const ox = dist > 1e-6 ? dx / dist : 1,
+        oy = dist > 1e-6 ? dy / dist : 0;
+      this.x[i] += ox * out;
+      this.y[i] += oy * out;
+      d.put(i, ox * out, oy * out, 0);
+      return;
+    }
+    if (d.plane(i, px, py, pz, nx, ny, nz, 0, 0, null)) d.solve(-1);
   }
 
   /** The blade and the hull: oriented boxes that shove. */

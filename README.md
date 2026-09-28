@@ -45,6 +45,13 @@ tiles, and what falls into a hole is reported through a callback.
   ball touching it is brought each step: how a blade carries its load, and
   how a ball glancing off a still box is slowed along it. A box that bounces
   carries along its face only.
+- **Bumpers** are round posts that never move, each standing from below
+  everything up to its top, flat there. A ball meets the side, the top or
+  the round edge between, whichever is nearest, and is bounced off the side
+  and the edge by the post's restitution, which may be over one, and thrown
+  up by the edge if it clips it in flight. The top is a floor to what lands
+  on it and bounces as the floor does. A coin is kept out of a post's side
+  as out of the rock, and lies on its top as on a box's.
 - **Belts** carry what rests on them. A **magnet** pulls what lies near a
   point.
 - **The rock** is a grid of solid tiles the caller owns and may rewrite in

@@ -36,7 +36,7 @@
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import { Worker, isMainThread, parentPort, workerData } from 'node:worker_threads';
-import { World, type Grid, type Pusher } from '../src/world';
+import { World, type Bumper, type Grid, type Pusher } from '../src/world';
 
 const BASELINE = 'scripts/bench-baseline.json';
 /**
@@ -313,10 +313,10 @@ function machine(seed: number) {
  * way with a border of rock one tile thick, a ball of radius 1, and the roll
  * the game has chosen. On it are what it has so far of the obstacles the
  * design asks for: a wall of rock one tile thick across part of it, a
- * sliding barrier, and a windmill of four thin blades. The bumpers, the
- * surfaces and the cup come as the package grows them, and each is put on
- * this course as it lands, with the baseline written again and the reason
- * given.
+ * sliding barrier, a windmill of four thin blades, and eight bumpers that
+ * bounce at 1.3. The surfaces and the cup come as the package grows them,
+ * and each is put on this course as it lands, with the baseline written
+ * again and the reason given.
  */
 const COURSE = {
   grid: { cols: 24, rows: 24, originX: -36, originY: -36, tile: 3 } satisfies Grid,
@@ -328,6 +328,17 @@ const COURSE = {
   barrier: { x: 12, y: -2, reach: 9, period: 3, hx: 3, hy: 0.25 },
   /** The windmill: four blades a quarter of a unit half-thick, reaching six from their pivot, turning a radian a second. */
   windmill: { x: -15, y: -8, blade: 6, spin: 1, hx: 0.25 },
+  /** Eight bumpers about the course, clear of the tee, the windmill's sweep and the barrier's path. */
+  bumpers: [
+    [10, -20],
+    [22, -14],
+    [26, 6],
+    [16, 22],
+    [-4, 26],
+    [-26, 22],
+    [-28, -22],
+    [5, -12],
+  ].map(([x, y]): Bumper => ({ x, y, radius: 1, top: 3, restitution: 1.3 })),
   tee: { x: 0, y: -25 },
   /** ooergolf's BODY_CAPACITY. */
   capacity: 64,
@@ -383,6 +394,7 @@ function course(seed: number) {
     });
   };
   world.pushers = [barrier, ...blades];
+  world.bumpers = COURSE.bumpers;
   // the course's own clock, from before the balls are put down, so what moves on it moves through the settling too
   let frames = 0;
   const step = () => {
@@ -402,6 +414,7 @@ function course(seed: number) {
       if (solid[ty * grid.cols + tx]) return false;
     }
     if (Math.hypot(x - mill.x, y - mill.y) < mill.blade + 1.5) return false;
+    for (const b of COURSE.bumpers) if (Math.hypot(x - b.x, y - b.y) < b.radius + 1.5) return false;
     if (Math.abs(y - bar.y) < 2 && Math.abs(x - bar.x) < bar.reach + bar.hx + 1.5) return false;
     for (let i = 0; i < world.count; i++) if (Math.hypot(world.x[i] - x, world.y[i] - y) < 3) return false;
     return true;
@@ -412,8 +425,8 @@ function course(seed: number) {
 /**
  * One ball shot round the course: at each speed in turn, in each direction,
  * each shot taken from where the last came to rest, as a round is played.
- * The twelve take 2240 frames as the package stands, so the timing, at 2400,
- * runs a little way into the first again.
+ * The twelve take 2560 frames with the bumpers on the course (2240 before
+ * them), so the timing, at 2700, runs a little way into the first again.
  */
 function round(seed: number) {
   const { world, step } = course(seed);
@@ -489,7 +502,7 @@ const SCENES: Scene[] = [
   {
     name: 'one ball shot round a golf course',
     budget: 0.1,
-    frames: 2400,
+    frames: 2700,
     setup: () => round(1),
   },
   {

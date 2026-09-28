@@ -191,7 +191,7 @@ baselines as written (on an M4 Pro, Node 23.4.0):
 | a heap of 2000 balls churned by two pushers          | pushminer             | 3      | 1.87     |
 | a bed of 1500 discs, timed while the pusher is in it | coinpush              | 4      | 1.24     |
 | one ball shot round a golf course                    | ooergolf              | 0.1    | 0.0017   |
-| 64 balls on that course at 120 u/s                   | ooergolf, at capacity | 1      | 0.031    |
+| 64 balls on that course at 120 u/s                   | ooergolf, at capacity | 1      | 0.035    |
 
 The tolerance is the measured wobble with room to spare: over three runs
 no scene moved by more than 7%. The golf scenes grow as the golf features

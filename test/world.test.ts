@@ -8,6 +8,7 @@ import {
   BOTTOM,
   DEFAULT_TUNING,
   World,
+  type Bumper,
   type Grid,
   type Hole,
   type Pusher,
@@ -985,5 +986,195 @@ describe('the world', () => {
       return w.load;
     };
     expect(load(0.8)).toBe(load(0));
+  });
+
+  /** A post at the origin, a unit across the middle, standing 3 high, bouncing harder than it is struck. */
+  const POST: Bumper = { x: 0, y: 0, radius: 1, top: 3, restitution: 1.3 };
+  /** A ball sent along x at a post, off its middle by `offset`: its speed and where it is once it has met it. */
+  const offPost = (post: Partial<Bumper>, speed: number, offset = 0, bounce = 1) => {
+    const w = world({ holes: [], bounce: [bounce, 1], tuning: { floorDrag: 0 } });
+    w.bumpers = [{ ...POST, ...post }];
+    const i = w.spawn(0, -5, offset, RADII[0], speed, 0, 0);
+    for (let f = 0; f < 120 && w.vx[i] > 0 && Math.abs(w.vy[i]) < 1e-6; f++) w.step(1 / 120, () => {});
+    return { vx: w.vx[i], vy: w.vy[i], x: w.x[i], y: w.y[i] };
+  };
+
+  it('bounces a ball off a post by its restitution, harder than it met it where that is over one', () => {
+    expect(offPost({}, 20).vx).toBeCloseTo(-26, 0);
+    expect(offPost({ restitution: 0.5 }, 20).vx).toBeCloseTo(-10, 0);
+    // and the kind's bounce scales it, as it does every restitution
+    expect(offPost({}, 20, 0, 0.5).vx).toBeCloseTo(-13, 0);
+    // A glancing blow: the ball is put out of the post along the way from the post's axis to its middle, and it
+    // keeps its speed across that way and leaves along it at the restitution times what it came in at.
+    for (const offset of [0.4, 0.8, 1.2]) {
+      const { vx, vy, x, y } = offPost({}, 20, offset);
+      const d = Math.hypot(x, y),
+        nx = x / d,
+        ny = y / d;
+      expect(d).toBeCloseTo(POST.radius + RADII[0], 2);
+      expect(vx * nx + vy * ny).toBeCloseTo(-1.3 * (20 * nx), 1);
+      expect(-vx * ny + vy * nx).toBeCloseTo(-20 * ny, 1);
+    }
+    // at a restitution of one, and slowly enough to be found barely into it, it leaves at the angle it came in at
+    const offset = 0.8,
+      cx = -Math.sqrt((POST.radius + RADII[0]) ** 2 - offset * offset);
+    const n = [cx / (POST.radius + RADII[0]), offset / (POST.radius + RADII[0])];
+    const dot = 5 * n[0];
+    const mirror = Math.atan2(-2 * dot * n[1], 5 - 2 * dot * n[0]);
+    const slow = offPost({ restitution: 1 }, 5, offset);
+    expect((Math.abs(Math.atan2(slow.vy, slow.vx) - mirror) * 180) / Math.PI).toBeLessThan(2);
+  });
+
+  it('lets a ball in flight go over a post below it, rest on its top, roll off it, and be thrown up by its edge', () => {
+    const low: Bumper = { ...POST, top: 1 };
+    // its bottom above the top all the way over: from 2 back and 3 up it falls a unit crossing it, to 1.56
+    const over = world({ holes: [], tuning: { floorDrag: 0 } });
+    over.bumpers = [low];
+    const a = over.spawn(0, -2, 0, 3, 20, 0, 0);
+    for (let f = 0; f < 30; f++) over.step(DT, () => {});
+    expect(over.x[a]).toBeGreaterThan(3);
+    expect(over.vx[a]).toBeCloseTo(20, 3);
+    // Dropped on the top, which bounces as the floor does and not at the post's 1.3, it rests there and sleeps,
+    // even held to sleeping on something; knocked, it rolls off.
+    const top = world({ holes: [], tuning: { sleepInAir: false } });
+    top.bumpers = [low];
+    const b = top.spawn(0, 0, 0, 4);
+    for (let f = 0; f < 180; f++) top.step(DT, () => {});
+    expect(top.asleep[b]).toBe(1);
+    expect(top.z[b]).toBeCloseTo(low.top + RADII[0], 2);
+    expect(Math.abs(top.q[b * 4]) + Math.abs(top.q[b * 4 + 1])).toBeLessThan(0.05);
+    top.hit(b, 3, 0, 0);
+    for (let f = 0; f < 120; f++) top.step(DT, () => {});
+    expect(top.x[b]).toBeGreaterThan(low.radius);
+    expect(top.z[b]).toBeCloseTo(RADII[0], 2);
+    // in flight a little above the top, and near enough not to have fallen past it, it clips the edge and is
+    // thrown up
+    const clip = world({ holes: [], tuning: { floorDrag: 0 } });
+    clip.bumpers = [low];
+    const c = clip.spawn(0, -1.5, 0, low.top + 0.2, 10, 0, 0);
+    let rising = 0;
+    for (let f = 0; f < 60; f++) {
+      clip.step(1 / 120, () => {});
+      rising = Math.max(rising, clip.vz[c]);
+    }
+    expect(rising).toBeGreaterThan(2);
+  });
+
+  it('stops a ball rolled gently against a bouncy post given bounceFrom, where it rests and sleeps, and bounces it without', () => {
+    const gently = (bounceFrom: number) => {
+      const w = world({ holes: [], tuning: { floorDrag: 0, settle: 1, bounceFrom } });
+      w.bumpers = [POST];
+      const i = w.spawn(0, -(POST.radius + RADII[0] + 0.05), 0, RADII[0], 1.5, 0, 0);
+      for (let f = 0; f < 240; f++) w.step(DT, () => {});
+      return { w, i };
+    };
+    const stopped = gently(2);
+    expect(stopped.w.asleep[stopped.i]).toBe(1);
+    expect(Math.hypot(stopped.w.x[stopped.i], stopped.w.y[stopped.i])).toBeGreaterThan(POST.radius + RADII[0] - 0.01);
+    expect(Math.hypot(stopped.w.x[stopped.i], stopped.w.y[stopped.i])).toBeLessThan(POST.radius + RADII[0] + 0.05);
+    const bounced = gently(0);
+    expect(bounced.w.x[bounced.i]).toBeLessThan(-3);
+  });
+
+  it('leaves no ball of a heap poured on a post inside it, and pours the same way twice', () => {
+    const pour = () => {
+      const random = seeded(5);
+      const w = world({ capacity: 300, holes: [], random });
+      w.bumpers = [{ ...POST, top: 1.5, restitution: 1 }];
+      for (let k = 0; k < 200; k++) {
+        const r = Math.sqrt(random()) * 3,
+          a = random() * Math.PI * 2;
+        w.spawn(k % 10 ? 0 : 1, Math.cos(a) * r, Math.sin(a) * r, 2 + random() * 6);
+      }
+      for (let f = 0; f < 360; f++) w.step(DT, () => {});
+      return w;
+    };
+    const w = pour();
+    let deepest = 0;
+    for (let i = 0; i < w.count; i++) {
+      const d = Math.hypot(w.x[i], w.y[i]);
+      // beside it, it is kept its radius out from the post's side; over it, its radius up from the top
+      const into = w.z[i] < 1.5 ? POST.radius + w.r[i] - d : d < POST.radius ? 1.5 + w.r[i] - w.z[i] : 0;
+      deepest = Math.max(deepest, into);
+    }
+    expect(deepest).toBeLessThan(0.01);
+    const again = pour();
+    for (const a of ['x', 'y', 'z', 'vx', 'vy', 'vz'] as const) expect(again[a]).toEqual(w[a]);
+  });
+
+  it('stands a post from below everything to its top in the world, so on a raised tile it shows only above the tile', () => {
+    const floor = new Float32Array(GRID.cols * GRID.rows);
+    for (let ty = 0; ty < GRID.rows; ty++) for (let tx = 0; tx < GRID.cols; tx++) floor[ty * GRID.cols + tx] = 4;
+    const roll = (top: number) => {
+      const w = world({ holes: [], floor, tuning: { floorDrag: 0 } });
+      w.bumpers = [{ ...POST, top }];
+      const i = w.spawn(0, -5, 0, 4 + RADII[0], 10, 0, 0);
+      for (let f = 0; f < 60; f++) w.step(DT, () => {});
+      return w.x[i];
+    };
+    expect(roll(5)).toBeLessThan(-1);
+    expect(roll(3)).toBeGreaterThan(3);
+  });
+
+  it('keeps balls shoved into the gap between a post and the rock out of both', () => {
+    const rock = solid((tx) => tx === 40);
+    const face = GRID.originX + 40 * GRID.tile;
+    const random = seeded(6);
+    const w = world({ capacity: 200, holes: [], solid: rock, random });
+    // the post a unit from the rock, and a ball is 0.84 across
+    w.bumpers = [{ ...POST, x: face - 2, y: 0 }];
+    for (let k = 0; k < 60; k++) w.spawn(0, face - 8 + random() * 4, -3 + random() * 6, RADII[0]);
+    let x = face - 12;
+    let prev: Pusher | null = null;
+    for (let f = 0; f < 240; f++) {
+      x += 3 * DT;
+      const p = block(x, { hy: 4, vx: prev ? (x - prev.x) / DT : 0 });
+      w.pushers = [p];
+      w.wakeNear(x + 2, 0, 6);
+      w.step(DT, () => {});
+      prev = p;
+    }
+    for (let i = 0; i < w.count; i++) {
+      expect(rock[tileOf(w.x[i], w.y[i])], `ball ${i} in the rock`).toBe(0);
+      const d = Math.hypot(w.x[i] - (face - 2), w.y[i]);
+      expect(d, `ball ${i} in the post`).toBeGreaterThan(POST.radius + RADII[0] - 0.05);
+    }
+  });
+
+  it('puts a ball driven down into the top of a post faster than a step back out of the top, not the side', () => {
+    const w = world({ holes: [], tuning: { sleepInAir: false } });
+    w.bumpers = [{ ...POST, top: 1 }];
+    const i = w.spawn(0, 0.1, 0, 1.6);
+    // at 90 u/s it goes three quarters of a unit a step, and its middle is found below the top
+    w.hit(i, 0, 0, -90);
+    for (let f = 0; f < 120; f++) w.step(DT, () => {});
+    expect(Math.hypot(w.x[i], w.y[i])).toBeLessThan(POST.radius);
+    expect(w.z[i]).toBeCloseTo(1 + RADII[0], 2);
+  });
+
+  it('keeps a sleeper a box shoves against a post out of the post from the step it is shoved', () => {
+    const w = world({ holes: [] });
+    w.bumpers = [POST];
+    const i = w.spawn(0, -(POST.radius + RADII[0] + 0.01), 0, RADII[0]);
+    for (let f = 0; f < 120; f++) w.step(DT, () => {});
+    expect(w.asleep[i]).toBe(1);
+    let x = w.x[i] - RADII[0] - 0.5 - 0.05,
+      deepest = 0;
+    for (let s = 0; s < 30; s++) {
+      x += 6 / 120;
+      w.pushers = [block(x, { hy: 0.5, vx: 6 })];
+      w.step(1 / 120, () => {});
+      deepest = Math.max(deepest, POST.radius + RADII[0] - Math.hypot(w.x[i], w.y[i]));
+    }
+    expect(deepest).toBeLessThan(0.01);
+  });
+
+  it('leaves be a carried ball held inside a post', () => {
+    const w = world({ holes: [] });
+    w.bumpers = [POST];
+    const i = w.spawn(0, 0.3, 0, 2);
+    w.carried[i] = 1;
+    for (let f = 0; f < 30; f++) w.step(DT, () => {});
+    expect([w.x[i], w.y[i], w.z[i]]).toEqual([expect.closeTo(0.3, 6), 0, 2]);
   });
 });

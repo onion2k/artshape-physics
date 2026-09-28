@@ -526,6 +526,20 @@ not move.
 
 ### 8. Bumpers
 
+As built, four things differ from what follows. A post's top bounces as the
+floor does, not at the post's figure: at 1.3, a ball dropped on it came back
+faster each time, 21, 31, 33, 37 u/s, which bounceFrom cannot stop. A coin
+meets a post's side as rock, put out by where its middle is, not as a plane
+through its solver: a coin a box shoved against a post was backed by the box
+and driven through the post. The glancing bounce is held to the law it
+follows, the speed across the way out of the post reversed and scaled and
+the speed along it kept, to within a hundredth; the angle is held to 2° at
+5 u/s, since at 20 u/s a ball is found up to a sixth of a unit into the post
+and the way out is several degrees off the ideal one. Sixteen posts under a
+churned heap, 830 awake, cost 6 to 10% of its frame over three seeds, some
+of it the balls striking them, so they are not binned by tile; a world with
+none does not look.
+
 **What:** `world.bumpers`, a list of round posts that do not move. Each
 stands from below everything up to `top`, flat on top, and bounces by its
 `restitution` times the kind's `bounce`. The restitution may be above 1,
