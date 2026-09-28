@@ -828,6 +828,20 @@ move.
 
 ### 11. The cup
 
+As built. The catch and run-over speeds, measured, are in the README: a cup
+of 2.5 with a rim of 0.3 holds every ball through the middle up to 30 u/s
+and lets every one over from 40. Very fast, a ball barely dips and glides
+over; at 40 it is thrown 2.8 up. The rim marks what it holds up BORNE, and
+no test can see it, since a ball can rest on no rim: partly over the edge
+it tips in, and beside it the floor holds it. The fuzzer's course has the
+cup, and held a ball to never more than a tenth into its rim over 500
+seeds; 55 of the 6000 shots were holed and 178 went in the water. The
+bench's course has one too, and neither of its golf scenes holes a ball:
+the round's shots stop in the bunker short of it, and at 120 u/s the 64
+run over. What it costs is a look at a hole for every ball at every look,
+which a world with no holes does not pay: the 64 balls 11 to 12% more,
+0.042 ms a frame.
+
 **What:** a hole given a `rim` is a cup:
 
 - There is no floor inside its radius, as now.

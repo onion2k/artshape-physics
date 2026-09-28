@@ -2,7 +2,7 @@
  * A round of golf played at random, and the rules a ball keeps however it is
  * struck. The package has no page for a fuzzer to play, so this is its
  * fuzzer: a course with every thing a golf course asks of the world (rock,
- * a raised wall, sand, water, a sliding barrier, a windmill and bumpers), a
+ * a raised wall, sand, water, a sliding barrier, a windmill, bumpers and a cup), a
  * ball shot from where it last came to rest in a direction and at a speed
  * from a seed, up to the 120 u/s the package is to hold at, and every fixed
  * step looked at. A test of one thing holds that thing; this finds what two
@@ -14,7 +14,7 @@
  * it again.
  */
 import { describe, expect, it } from 'vitest';
-import { World, type Bumper, type Grid, type Pusher, type Surface, type Tuning } from '../src/world';
+import { BOTTOM, World, type Bumper, type Grid, type Hole, type Pusher, type Surface, type Tuning } from '../src/world';
 
 const SEEDS = ((spec: string) => {
   const [a, b] = spec.split('-').map(Number);
@@ -43,6 +43,8 @@ const BUMPERS: Bumper[] = [
   [-26, -20],
 ].map(([x, y]): Bumper => ({ x, y, radius: 1, top: 3, restitution: 1.3 }));
 const TEE = { x: 0, y: -25 };
+/** The cup, clear of everything else, and held to catching by its rim alone. */
+const CUP: Hole = { x: 15, y: 22, radius: 2.5, depth: 4, rim: 0.3, pull: 0 };
 
 function seeded(seed: number): () => number {
   let s = (seed * 2654435761) >>> 0;
@@ -156,14 +158,17 @@ function play(seed: number): string | null {
     surface,
     surfaces: SURFACES,
     radii: [R],
+    holes: [CUP],
     random,
     tuning: TUNING,
   });
   w.bumpers = BUMPERS;
   let steps = 0;
   const reported = new Map<number, number>();
-  const collect = (_kind: number, _x: number, _y: number, slot: number) => {
+  let lastHole = BOTTOM;
+  const collect = (_kind: number, _x: number, _y: number, slot: number, hole: number) => {
     reported.set(slot, (reported.get(slot) ?? 0) + 1);
+    lastHole = hole;
   };
   let ball = w.spawn(0, TEE.x, TEE.y, R),
     lie = { ...TEE };
@@ -189,7 +194,9 @@ function play(seed: number): string | null {
         ty = Math.floor((y - GRID.originY) / GRID.tile);
       if (tx < 0 || ty < 0 || tx >= GRID.cols || ty >= GRID.rows) return `${at(s)}: off the grid`;
       if (solid[tile(tx, ty)]) return `${at(s)}: its middle in the rock at ${x.toFixed(2)}, ${y.toFixed(2)}`;
-      if (floor[tile(tx, ty)] > z + 1e-3) return `${at(s)}: its middle in a raised wall`;
+      // down the cup it is below the floor round it, and the cup's pit holds it, not the floor
+      const inCup = Math.hypot(x - CUP.x, y - CUP.y) < CUP.radius;
+      if (!inCup && floor[tile(tx, ty)] > z + 1e-3) return `${at(s)}: its middle in a raised wall`;
       // near enough to have met a box or a post in the step: within half a unit and the step's travel of it
       const reach = -(0.5 + (before + 70 * STEP) * STEP);
       const near = { box: false, post: false };
@@ -203,6 +210,9 @@ function play(seed: number): string | null {
         if (d > 0.1) return `${at(s)}: ${d.toFixed(3)} into a post`;
         if (d > reach) near.post = true;
       }
+      // the cup's rim, the circle of its edge at the floor
+      const rim = Math.hypot(Math.hypot(x - CUP.x, y - CUP.y) - CUP.radius, z);
+      if (rim < R - 0.1) return `${at(s)}: ${(R - rim).toFixed(3)} into the cup's rim`;
       const after = Math.hypot(w.vx[ball], w.vy[ball], w.vz[ball]);
       if (!near.box && !near.post && after > before + 70 * STEP + 1e-3)
         return `${at(s)}: sped up from ${before.toFixed(3)} to ${after.toFixed(3)} with nothing to speed it`;
@@ -210,8 +220,10 @@ function play(seed: number): string | null {
     }
     if (s >= LONGEST) return `${at(s)}: still going after ${LONGEST * STEP} s`;
     if (w.alive[ball]) lie = { x: w.x[ball], y: w.y[ball] };
-    // out of the world: put back where it last lay, as the game does, in the slot it freed, which is a new ball's
+    // Out of the world: put back where it last lay, as the game does, or on the tee again if it was holed; in the
+    // slot it freed, which is a new ball's.
     else {
+      if (lastHole === 0) lie = { ...TEE };
       ball = w.spawn(0, lie.x, lie.y, R);
       reported.delete(ball);
     }

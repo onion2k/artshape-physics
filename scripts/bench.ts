@@ -36,7 +36,7 @@
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import { Worker, isMainThread, parentPort, workerData } from 'node:worker_threads';
-import { World, type Bumper, type Grid, type Pusher, type Surface } from '../src/world';
+import { World, type Bumper, type Grid, type Hole, type Pusher, type Surface } from '../src/world';
 
 const BASELINE = 'scripts/bench-baseline.json';
 /**
@@ -314,9 +314,8 @@ function machine(seed: number) {
  * the game has chosen. On it are what it has so far of the obstacles the
  * design asks for: a wall of rock one tile thick across part of it, a
  * sliding barrier, a windmill of four thin blades, eight bumpers that
- * bounce at 1.3, and a bunker of sand on a green. The cup comes as the
- * package grows it, and is put on this course as it lands, with the
- * baseline written again and the reason given.
+ * bounce at 1.3, a bunker of sand on a green, and a cup, caught by its rim
+ * alone. A ball holed is put down again, on the tee or somewhere clear.
  */
 const COURSE = {
   grid: { cols: 24, rows: 24, originX: -36, originY: -36, tile: 3 } satisfies Grid,
@@ -345,6 +344,8 @@ const COURSE = {
     [5, -12],
   ].map(([x, y]): Bumper => ({ x, y, radius: 1, top: 3, restitution: 1.3 })),
   tee: { x: 0, y: -25 },
+  /** The cup, up the way from the tee past the bunker, caught by its rim alone. */
+  cup: { x: 0, y: 5, radius: 2.5, depth: 4, rim: 0.3, pull: 0 } satisfies Hole,
   /** ooergolf's BODY_CAPACITY. */
   capacity: 64,
 };
@@ -364,6 +365,7 @@ function course(seed: number) {
     grid,
     solid,
     radii: COURSE.radii,
+    holes: [COURSE.cup],
     random,
     tuning: COURSE.tuning,
     surfaces: COURSE.surfaces,
@@ -426,6 +428,7 @@ function course(seed: number) {
       if (solid[ty * grid.cols + tx]) return false;
     }
     if (Math.hypot(x - mill.x, y - mill.y) < mill.blade + 1.5) return false;
+    if (Math.hypot(x - COURSE.cup.x, y - COURSE.cup.y) < COURSE.cup.radius + 1.5) return false;
     for (const b of COURSE.bumpers) if (Math.hypot(x - b.x, y - b.y) < b.radius + 1.5) return false;
     if (Math.abs(y - bar.y) < 2 && Math.abs(x - bar.x) < bar.reach + bar.hx + 1.5) return false;
     for (let i = 0; i < world.count; i++) if (Math.hypot(world.x[i] - x, world.y[i] - y) < 3) return false;
@@ -443,11 +446,14 @@ function course(seed: number) {
  */
 function round(seed: number) {
   const { world, step } = course(seed);
-  const ball = world.spawn(0, COURSE.tee.x, COURSE.tee.y, COURSE.radii[0]);
+  const tee = () => world.spawn(0, COURSE.tee.x, COURSE.tee.y, COURSE.radii[0]);
+  let ball = tee();
   for (let f = 0; f < 60; f++) step();
   let shot = 0,
     shotAt = 0;
   const frame = (f: number) => {
+    // holed, it is on the tee again, and the next shot is taken from there
+    if (!world.alive[ball]) ball = tee();
     if (world.asleep[ball] || f - shotAt >= LONGEST) {
       const speed = SPEEDS[Math.floor(shot / DIRECTIONS.length) % SPEEDS.length],
         a = DIRECTIONS[shot % DIRECTIONS.length];
@@ -481,6 +487,12 @@ function crowd(seed: number) {
   const speed = SPEEDS[SPEEDS.length - 1];
   const frame = () => {
     for (let i = 0; i < world.count; i++) {
+      // one holed is put down again somewhere clear, so the course stays as full as it holds
+      while (!world.alive[i]) {
+        const x = (random() * 2 - 1) * spread,
+          y = (random() * 2 - 1) * spread;
+        if (clear(x, y)) world.spawn(0, x, y, COURSE.radii[0]);
+      }
       if (!world.asleep[i]) continue;
       const a = random() * Math.PI * 2;
       world.wake(i);

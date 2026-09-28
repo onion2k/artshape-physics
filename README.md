@@ -121,6 +121,31 @@ tiles, and what falls into a hole is reported through a callback.
   which what fell is reported, with which hole it went down, and its slot
   freed. A hole that reaches below the bottom still has what goes down it:
   the body is gone once it passes the bottom, and reported as the hole's.
+  Its depth counts from the floor under its middle, so it may be cut in a
+  raised floor, and the floor round a body down it is no wall to it. How
+  hard the floor slopes toward it, and how far out, are its own `pull` and
+  `reach`, 6 and 2.5 unless given.
+
+  A hole given a `rim` is a **cup**: the round edge where it meets the floor
+  is a thing a ball meets, and is put out of and bounced off by the rim's
+  figure. Nothing says by a figure whether a ball drops. A slow ball partly
+  over the edge tips in; one crossing is caught if it has dropped far
+  enough by the far side for the rim to meet it low and turn it back, and
+  runs over if the rim meets it near its bottom and throws it up; one
+  clipping the edge is turned, and may run round it and out. With no pull,
+  a rim of 0.3 and a ball of radius 1 rolled through the middle:
+
+  | Cup radius | always holed up to | always runs over from |
+  | ---------- | ------------------ | --------------------- |
+  | 1.6        | 22 u/s             | 26 u/s                |
+  | 2.5        | 30 u/s             | 40 u/s                |
+  | 3          | 36 u/s             | 48 u/s                |
+
+  Between the two, either may happen. Off the middle it lips out sooner: in
+  a cup of 2.5, a ball on a line 2 off it is holed up to 12 u/s, and turned
+  by the rim 20 to 70 degrees and away from 14 to 20. A disc falls into a cup
+  as into a hole, and does not meet its rim.
+
 - **Chance** comes from a function the caller hands in, and the **tuning** —
   gravity, friction, restitution, drag, the settling of what is slow, the
   sleep window, whether a body may sleep in the air, the hash cell — is a

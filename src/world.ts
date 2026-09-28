@@ -43,7 +43,20 @@ export interface Hole {
   x: number;
   y: number;
   radius: number;
+  /** How far down from the floor under its middle a body is collected, less 3. */
   depth: number;
+  /** How hard the floor slopes a ball toward it, in u/s², from its edge to `reach` beyond: 6 if left out. */
+  pull?: number;
+  /** How far beyond its edge the floor slopes toward it: 2.5 if left out. */
+  reach?: number;
+  /**
+   * The restitution of its rim, which makes it a cup: the round edge where
+   * it meets the floor, which a ball meets and is put out of and bounced off,
+   * so a slow ball partly over it tips in, a fast one crossing it is thrown
+   * up off the far side, and one clipping it is turned. Left out, it has no
+   * rim, as a hole had none. A disc does not meet it.
+   */
+  rim?: number;
 }
 
 /**
@@ -1238,7 +1251,7 @@ export class World {
       if (Math.hypot(x[i] - hole.x, y[i] - hole.y) >= hole.radius) continue;
       // Over the hole there is no floor, and at the bottom of it the disc is collected. A hole that reaches below
       // the world's bottom still has what went down it: it is the hole the game is told of, not the bottom.
-      if (z[i] < -hole.depth + 3 || z[i] < this.bottom) {
+      if (z[i] < this.floorAt(hole.x, hole.y) - hole.depth + 3 || z[i] < this.bottom) {
         collect(this.kind[i], x[i], y[i], i, k);
         this.remove(i);
         return false;
@@ -1419,6 +1432,13 @@ export class World {
     return best;
   }
 
+  /** Whether a body is down a hole: within its radius, and below the floor it is cut in. */
+  private inPit(i: number, z: number): boolean {
+    for (const h of this.holes)
+      if (Math.hypot(this.x[i] - h.x, this.y[i] - h.y) < h.radius && z < this.floorAt(h.x, h.y)) return true;
+    return false;
+  }
+
   /** Whether the tile at a point is a wall to a body whose middle is at `z`: rock, off the grid, or a floor above it. */
   private wallAt(px: number, py: number, z: number): boolean {
     const tx = Math.floor((px - this.grid.originX) / this.grid.tile),
@@ -1447,7 +1467,10 @@ export class World {
     // can end a step's pushes with its middle under the floor it lies on, to be put back on it next: taken as it
     // stands, its own floor is rock to it, and it is put out of it sideways. So a disc is no lower to the rock than
     // it was when the step began.
-    const zi = this.discs && this.h[i] > 0 ? Math.max(z[i], this.discs.pz[i]) : z[i];
+    const zi0 = this.discs && this.h[i] > 0 ? Math.max(z[i], this.discs.pz[i]) : z[i];
+    // Down a hole, below the floor it is cut in, the floor round it stands above a body and would be a wall to it,
+    // and shove it about as it fell; the pit's own wall holds it there, and the rock still does.
+    const zi = this.heights && this.inPit(i, zi0) ? Infinity : zi0;
     if (this.wallAt(x[i], y[i], zi)) {
       const bx = this.lastX[i],
         by = this.lastY[i];
@@ -1852,6 +1875,47 @@ export class World {
     this.floor(i, collect, last);
   }
 
+  /**
+   * A cup's rim against a ball: the circle of the hole's edge at its level.
+   * The ball is put out of it along the way from the nearest point of it to
+   * its middle, and bounced off by the rim's figure times its kind's bounce.
+   * A ball rolling beside the cup is clear of it by its radius; one partly
+   * over the edge is put inward and up, and tips in; one crossing meets the
+   * far side, low and turned back if it has dropped far enough, high and
+   * thrown up and on if it has not.
+   */
+  private rim(i: number, h: Hole, level: number) {
+    const { x, y, z, vx, vy, vz, r } = this;
+    // most of the time a ball is nowhere near it: above it or below it by its radius, or outside the square round it
+    const up = z[i] - level,
+      reach = h.radius + r[i];
+    if (up >= r[i] || up <= -r[i]) return;
+    const dx = x[i] - h.x,
+      dy = y[i] - h.y;
+    if (dx > reach || dx < -reach || dy > reach || dy < -reach) return;
+    const d = Math.hypot(dx, dy);
+    // on the axis the rim is all round it, as far every way, and it is the pit's to hold
+    if (d < 1e-6) return;
+    const out = d - h.radius;
+    const gap = Math.hypot(out, up);
+    if (gap >= r[i] || gap < 1e-9) return;
+    const nx = ((dx / d) * out) / gap,
+      ny = ((dy / d) * out) / gap,
+      nz = up / gap;
+    const pen = r[i] - gap;
+    x[i] += nx * pen;
+    y[i] += ny * pen;
+    z[i] += nz * pen;
+    const vn = vx[i] * nx + vy[i] * ny + vz[i] * nz;
+    if (vn < 0) {
+      const e = -vn > this.tune.bounceFrom ? h.rim! * this.kindBounce[this.kind[i]] : 0;
+      vx[i] -= nx * vn * (1 + e);
+      vy[i] -= ny * vn * (1 + e);
+      vz[i] -= nz * vn * (1 + e);
+    }
+    if (nz > 0) this.onFloor[i] |= BORNE;
+  }
+
   /** The floor under a ball, and the holes and bottom: caught and bounced every look, dragged on the last. */
   private floor(i: number, collect: Collect, last: boolean) {
     const { x, y, z, vx, vy, vz, r } = this;
@@ -1863,12 +1927,15 @@ export class World {
       ndy = 0;
     for (let k = 0; k < this.holes.length; k++) {
       const h = this.holes[k];
+      // the level it is cut at: the floor under its middle
+      const level = this.floorAt(h.x, h.y);
+      if (h.rim !== undefined) this.rim(i, h, level);
       const dx = x[i] - h.x,
         dy = y[i] - h.y;
       const d = Math.hypot(dx, dy);
       if (d < h.radius) {
         // over the hole: nothing under it, and the pit's wall around it
-        if (z[i] < 0 && d > h.radius - r[i]) {
+        if (z[i] < level && d > h.radius - r[i]) {
           const nx = dx / d,
             ny = dy / d;
           const fix = d - (h.radius - r[i]);
@@ -1881,7 +1948,7 @@ export class World {
           }
         }
         // down the hole, and the hole's even if it reaches below the bottom of the world, as a cup under water might
-        if (z[i] < -h.depth + 3 || z[i] < this.bottom) {
+        if (z[i] < level - h.depth + 3 || z[i] < this.bottom) {
           collect(this.kind[i], x[i], y[i], i, k);
           this.remove(i);
         }
@@ -1929,9 +1996,10 @@ export class World {
         vy[i] *= keep;
       }
       // a body near a rim tips in: the floor slopes to the hole a little
-      if (near && nd < near.radius + 2.5) {
-        vx[i] -= (ndx / nd) * 6 * step;
-        vy[i] -= (ndy / nd) * 6 * step;
+      if (near && nd < near.radius + (near.reach ?? 2.5)) {
+        const pull = near.pull ?? 6;
+        vx[i] -= (ndx / nd) * pull * step;
+        vy[i] -= (ndy / nd) * pull * step;
       }
     }
   }

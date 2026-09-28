@@ -174,7 +174,9 @@ applies:
   and its slot is freed.
 - **At capacity:** `spawn` returns -1, a freed slot is used again first, and
   the cost holds with thousands of bodies in the hash.
-- **Holes:** over one, beside one, at the rim, and more than one hole.
+- **Holes:** over one, beside one, at the rim, and more than one hole; a
+  hole cut in a raised floor; and a cup's rim: tipping in, caught, run over,
+  lipped out, landed on from the air.
 - **Pushers:** still, moving, turning (`spin`), swept by the frame's lag, a
   body on the top of one, and the load count.
 - **Frame length:** `step(dt)` with dt of 1/30, 1/60 and 1/144. The
@@ -206,8 +208,8 @@ baselines as written (on an M4 Pro, Node 23.4.0):
 | ---------------------------------------------------- | --------------------- | ------ | -------- |
 | a heap of 2000 balls churned by two pushers          | pushminer             | 3      | 1.87     |
 | a bed of 1500 discs, timed while the pusher is in it | coinpush              | 4      | 1.24     |
-| one ball shot round a golf course                    | ooergolf              | 0.1    | 0.0018   |
-| 64 balls on that course at 120 u/s                   | ooergolf, at capacity | 1      | 0.040    |
+| one ball shot round a golf course                    | ooergolf              | 0.1    | 0.0019   |
+| 64 balls on that course at 120 u/s                   | ooergolf, at capacity | 1      | 0.042    |
 
 The tolerance is the measured wobble with room to spare: over three runs
 no scene moved by more than 7%. The golf scenes grow as the golf features
