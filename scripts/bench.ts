@@ -36,7 +36,7 @@
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import { Worker, isMainThread, parentPort, workerData } from 'node:worker_threads';
-import { World, type Bumper, type Grid, type Pusher } from '../src/world';
+import { World, type Bumper, type Grid, type Pusher, type Surface } from '../src/world';
 
 const BASELINE = 'scripts/bench-baseline.json';
 /**
@@ -313,15 +313,19 @@ function machine(seed: number) {
  * way with a border of rock one tile thick, a ball of radius 1, and the roll
  * the game has chosen. On it are what it has so far of the obstacles the
  * design asks for: a wall of rock one tile thick across part of it, a
- * sliding barrier, a windmill of four thin blades, and eight bumpers that
- * bounce at 1.3. The surfaces and the cup come as the package grows them,
- * and each is put on this course as it lands, with the baseline written
- * again and the reason given.
+ * sliding barrier, a windmill of four thin blades, eight bumpers that
+ * bounce at 1.3, and a bunker of sand on a green. The cup comes as the
+ * package grows it, and is put on this course as it lands, with the
+ * baseline written again and the reason given.
  */
 const COURSE = {
   grid: { cols: 24, rows: 24, originX: -36, originY: -36, tile: 3 } satisfies Grid,
   radii: [1],
   tuning: { floorDrag: 0.8 },
+  /** The green, at the drag the game has chosen, and sand ten times as heavy. */
+  surfaces: [{ drag: 0.8 }, { drag: 8 }] satisfies Surface[],
+  /** A bunker three tiles by three, across the way straight up from the tee. */
+  bunker: { tx: [10, 13], ty: [6, 9] },
   /** The wall: one row of rock tiles from the west border to the middle, leaving the east side open. */
   wall: { row: 16, to: 13 },
   /** The barrier: a bar a quarter of a unit half-thick, going to and fro along x across the way up the open side. */
@@ -361,6 +365,13 @@ function course(seed: number) {
     radii: COURSE.radii,
     random,
     tuning: COURSE.tuning,
+    surfaces: COURSE.surfaces,
+    surface: Uint8Array.from({ length: grid.cols * grid.rows }, (_, t) => {
+      const tx = t % grid.cols,
+        ty = Math.floor(t / grid.cols);
+      const { bunker } = COURSE;
+      return tx >= bunker.tx[0] && tx < bunker.tx[1] && ty >= bunker.ty[0] && ty < bunker.ty[1] ? 1 : 0;
+    }),
   });
   const box = (hx: number, hy: number, spin: number, px: number, py: number): Pusher => ({
     x: px,
@@ -425,8 +436,9 @@ function course(seed: number) {
 /**
  * One ball shot round the course: at each speed in turn, in each direction,
  * each shot taken from where the last came to rest, as a round is played.
- * The twelve take 2560 frames with the bumpers on the course (2240 before
- * them), so the timing, at 2700, runs a little way into the first again.
+ * The twelve take 2440 frames with the bumpers and the bunker on the course
+ * (2240 before either), so the timing, at 2700, runs a little way into the
+ * first again.
  */
 function round(seed: number) {
   const { world, step } = course(seed);

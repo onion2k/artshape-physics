@@ -46,6 +46,21 @@ export interface Hole {
   depth: number;
 }
 
+/**
+ * What a tile of floor is made of, for a ball: how hard it drags what rolls
+ * on it, how steadily it slows it, and how its faces bounce a ball when the
+ * tile is a wall to it. A disc is held by the felt, `grip`, and reads none
+ * of it.
+ */
+export interface Surface {
+  /** How hard it slows what rolls on it, as the tuning's floorDrag: the speed lost goes as the speed. */
+  drag: number;
+  /** A steady slowing, in u/s², that never takes the speed below nothing: how a green lets a putt die. 0 if left out. */
+  roll?: number;
+  /** How much of its speed into the tile's faces a ball keeps, going back out; the tuning's wallRestitution if left out. */
+  bounce?: number;
+}
+
 /** The hole a body is reported to have left by when it fell out of the bottom of the world, down no hole at all. */
 export const BOTTOM = -1;
 
@@ -179,6 +194,18 @@ export interface WorldOptions {
   floor?: Float32Array;
   /** Below this height a body has fallen out of the world: reported like one down a hole, and its slot freed. */
   bottom?: number;
+  /**
+   * Which surface each tile is, one byte a tile, row by row, an index into
+   * `surfaces`: all 0 if left out. Read every step, like the rock, so it may
+   * be rewritten in place. Off the grid is surface 0.
+   */
+  surface?: Uint8Array;
+  /**
+   * What each surface is. A world given none drags by the tuning's floorDrag
+   * and bounces off walls by its wallRestitution, as it always has; and so
+   * does a tile whose surface has no entry.
+   */
+  surfaces?: readonly Surface[];
   /** The collision radius of each kind of body, by kind. */
   radii: readonly number[];
   /**
@@ -195,6 +222,12 @@ export interface WorldOptions {
    * disc does not bounce, and its kind's bounce is not read.
    */
   bounce?: readonly number[];
+  /**
+   * How hard the floor slows each kind, by kind: a surface's drag and its
+   * roll are multiplied by it. A kind left out is slowed by 1. A disc is held
+   * by the felt and does not read it.
+   */
+  drag?: readonly number[];
   holes?: readonly Hole[];
   /** Where chance comes from, for a spawned body's tilt: Math.random unless told otherwise. */
   random?: () => number;
@@ -335,6 +368,9 @@ export class World {
   solid: Uint8Array;
   /** How high the floor stands on each tile, or nothing for a flat floor at 0; the grid's owner may rewrite it. */
   heights: Float32Array | null;
+  /** Which surface each tile is, or nothing for all of surface 0; the grid's owner may rewrite it. */
+  surface: Uint8Array | null;
+  private readonly surfaces: readonly Surface[];
   /** Below which a body has fallen out of the world. */
   readonly bottom: number;
   readonly grid: Grid;
@@ -342,6 +378,8 @@ export class World {
   private readonly radii: readonly number[];
   /** How bouncy each kind is: 1 for a kind not given one. */
   private readonly kindBounce: readonly number[];
+  /** How hard the floor slows each kind: 1 for a kind not given one. */
+  private readonly kindDrag: readonly number[];
   private readonly thickness: readonly number[];
   /** The discs' side of things, if any kind is one. */
   private readonly discs: Discs | null;
@@ -389,6 +427,9 @@ export class World {
     this.holes = options.holes ?? [];
     this.radii = radii;
     this.kindBounce = radii.map((_, k) => options.bounce?.[k] ?? 1);
+    this.kindDrag = radii.map((_, k) => options.drag?.[k] ?? 1);
+    this.surface = options.surface ?? null;
+    this.surfaces = options.surfaces ?? [];
     this.maxRadius = Math.max(...radii);
     this.tune = { ...DEFAULT_TUNING, ...options.tuning };
     // called each time, not captured, so a caller who swaps Math.random out later is heard
@@ -980,6 +1021,17 @@ export class World {
     }
   }
 
+  /**
+   * What the tile at a tile's column and row is made of: its entry in the
+   * table, or nothing where the tuning's own figures stand, as they do in a
+   * world given no table, and for a surface the table has no entry for.
+   */
+  private surfaceOf(tx: number, ty: number): Surface | undefined {
+    if (this.surfaces.length === 0) return undefined;
+    const on = this.surface && tx >= 0 && ty >= 0 && tx < this.grid.cols && ty < this.grid.rows;
+    return this.surfaces[on ? this.surface![ty * this.grid.cols + tx] : 0];
+  }
+
   /** How high the floor stands under a point: the tile's height, or nothing off the grid or on a flat floor. */
   floorAt(px: number, py: number): number {
     if (!this.heights) return 0;
@@ -1406,7 +1458,10 @@ export class World {
         if (this.h[i] > 0) continue;
         const vn = vx[i] * dx + vy[i] * dy;
         if (vn < 0) {
-          const e = vn < -this.tune.bounceFrom ? this.tune.wallRestitution * this.kindBounce[this.kind[i]] : 0;
+          const e =
+            vn < -this.tune.bounceFrom
+              ? (this.surfaceOf(nx, ny)?.bounce ?? this.tune.wallRestitution) * this.kindBounce[this.kind[i]]
+              : 0;
           vx[i] -= dx * vn * (1 + e);
           vy[i] -= dy * vn * (1 + e);
         }
@@ -1756,9 +1811,24 @@ export class World {
       z[i] = fz + r[i];
       if (vz[i] < -this.tune.bounceFrom) vz[i] = -vz[i] * this.tune.restitution * this.kindBounce[this.kind[i]];
       else if (vz[i] < 0) vz[i] = 0;
-      const drag = 1 / (1 + this.tune.floorDrag * step);
+      // the surface of the tile under its middle, the kind scaling it
+      const under = this.surfaces.length
+          ? this.surfaceOf(
+              Math.floor((x[i] - this.grid.originX) / this.grid.tile),
+              Math.floor((y[i] - this.grid.originY) / this.grid.tile),
+            )
+          : undefined,
+        kd = this.kindDrag[this.kind[i]];
+      const drag = 1 / (1 + (under ? under.drag : this.tune.floorDrag) * kd * step);
       vx[i] *= drag;
       vy[i] *= drag;
+      const roll = (under?.roll ?? 0) * kd * step;
+      if (roll > 0) {
+        const speed = Math.hypot(vx[i], vy[i]);
+        const keep = speed > roll ? (speed - roll) / speed : 0;
+        vx[i] *= keep;
+        vy[i] *= keep;
+      }
       this.onFloor[i] |= 1 | BORNE;
       // a body near a rim tips in: the floor slopes to the hole a little
       if (near && nd < near.radius + 2.5) {

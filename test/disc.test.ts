@@ -847,4 +847,19 @@ describe('a disc', () => {
     expect(tilt(w, i)).toBeLessThan(0.05);
     expect(w.asleep[i]).toBe(1);
   });
+
+  it("slides the same on any surface: the felt holds a coin, not the floor's drag or roll", () => {
+    const slide = (over: Partial<WorldOptions>) => {
+      const w = world(over);
+      const i = flat(w, 0, 0, H / 2);
+      run(w, 0.5);
+      w.hit(i, 5, 2, 0);
+      run(w, 2);
+      return [...w.x, ...w.y, ...w.z, ...w.q];
+    };
+    const sand = new Uint8Array(GRID.cols * GRID.rows).fill(1);
+    expect(
+      slide({ surfaces: [{ drag: 0 }, { drag: 40, roll: 30, bounce: 0.9 }], surface: sand, drag: [3, 1] }),
+    ).toEqual(slide({}));
+  });
 });

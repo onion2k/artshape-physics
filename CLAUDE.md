@@ -155,6 +155,9 @@ applies:
   it as flat at 0, and the hash clamps to its edge cells.
 - **Floor heights:** on a raised tile, at a step face from below, at an edge
   from above, and a hole or other thing standing on a tile that is not at 0.
+- **Surfaces:** on each surface of a table, a surface the table has no
+  entry for (the tuning's figures), a world given no table, and off the
+  grid, which is surface 0.
 - **The bottom:** a body that falls out is reported once, through `collect`,
   and its slot is freed.
 - **At capacity:** `spawn` returns -1, a freed slot is used again first, and
@@ -190,7 +193,7 @@ baselines as written (on an M4 Pro, Node 23.4.0):
 | ---------------------------------------------------- | --------------------- | ------ | -------- |
 | a heap of 2000 balls churned by two pushers          | pushminer             | 3      | 1.87     |
 | a bed of 1500 discs, timed while the pusher is in it | coinpush              | 4      | 1.24     |
-| one ball shot round a golf course                    | ooergolf              | 0.1    | 0.0017   |
+| one ball shot round a golf course                    | ooergolf              | 0.1    | 0.0018   |
 | 64 balls on that course at 120 u/s                   | ooergolf, at capacity | 1      | 0.035    |
 
 The tolerance is the measured wobble with room to spare: over three runs

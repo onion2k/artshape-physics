@@ -79,6 +79,25 @@ tiles, and what falls into a hole is reported through a callback.
   rolls onto it falls and is reported as `BOTTOM`, over the water, and what
   is thrown over it lands beyond. Rock stays as tall as the world.
 
+- **Surfaces**, one byte a tile beside the rock and the floor's heights, say
+  what each tile of floor is made of, from a table of them: how hard it
+  drags a ball rolling on it, how steadily it slows it (`roll`), and how its
+  faces bounce a ball when the tile is a wall to it. Each kind's `drag`
+  scales both slowings. A world given no table drags by the tuning's
+  `floorDrag` and bounces off walls by its `wallRestitution`. A disc is
+  held by the felt and reads none of it. Drag takes off speed as the speed,
+  so how far a ball rolls goes as its speed; roll takes off a steady amount,
+  so it goes as the square, as a putt dies on a green. For a ball a unit
+  across (ooergolf's), how far it rolls and how long it takes:
+
+  | Surface                 | from 10 u/s   | from 20 u/s   | from 30 u/s   | from 40 u/s    |
+  | ----------------------- | ------------- | ------------- | ------------- | -------------- |
+  | drag 0.8 (ooergolf now) | 11.2 u, 3.0 s | 23.8 u, 4.0 s | 36.4 u, 4.3 s | 49.0 u, 4.7 s  |
+  | roll 5                  | 10.0 u, 1.9 s | 40.0 u, 3.9 s | 90.1 u, 5.9 s | 160.1 u, 7.9 s |
+  | roll 7.5                | 6.7 u, 1.3 s  | 26.7 u, 2.6 s | 60.1 u, 4.0 s | 106.8 u, 5.3 s |
+  | roll 10                 | 5.0 u, 1.0 s  | 20.1 u, 2.0 s | 45.1 u, 3.0 s | 80.1 u, 4.0 s  |
+  | roll 12                 | 4.2 u, 0.8 s  | 16.7 u, 1.6 s | 37.6 u, 2.5 s | 66.8 u, 3.3 s  |
+
 - **Holes** are where bodies leave the world: as many as the caller gives it,
   each with a rim the floor slopes toward, a wall to the pit, and a depth at
   which what fell is reported, with which hole it went down, and its slot

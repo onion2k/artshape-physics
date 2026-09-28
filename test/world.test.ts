@@ -12,6 +12,7 @@ import {
   type Grid,
   type Hole,
   type Pusher,
+  type Surface,
   type Tuning,
   type WorldOptions,
 } from '../src/world';
@@ -1176,5 +1177,126 @@ describe('the world', () => {
     w.carried[i] = 1;
     for (let f = 0; f < 30; f++) w.step(DT, () => {});
     expect([w.x[i], w.y[i], w.z[i]]).toEqual([expect.closeTo(0.3, 6), 0, 2]);
+  });
+
+  /** Which surface each tile is, from where it is. */
+  const ground = (at: (tx: number, ty: number) => number) => {
+    const out = new Uint8Array(GRID.cols * GRID.rows);
+    for (let ty = 0; ty < GRID.rows; ty++) for (let tx = 0; tx < GRID.cols; tx++) out[ty * GRID.cols + tx] = at(tx, ty);
+    return out;
+  };
+  /** How far a ball rolls along x from x -80 at a speed, on a floor of the surfaces given, until it stops. */
+  const rollOn = (over: Partial<WorldOptions>, speed: number, kind = 0) => {
+    const w = world({ holes: [], ...over });
+    const i = w.spawn(kind, -80, 0, (over.radii ?? RADII)[kind], speed, 0, 0);
+    let f = 0;
+    for (; f < 1200 && !w.asleep[i]; f++) w.step(DT, () => {});
+    return { far: w.x[i] + 80, seconds: f / 60 };
+  };
+
+  it('drags a ball by the surface of the tile under it', () => {
+    const surfaces: Surface[] = [{ drag: 5.5 }, { drag: 2 }, { drag: 4 }];
+    const a = rollOn({ surfaces, surface: ground(() => 1) }, 20).far,
+      b = rollOn({ surfaces, surface: ground(() => 2) }, 20).far;
+    // the distance goes as the speed over the drag, and a little more that the settling takes at the end
+    expect(a).toBeCloseTo(10, -0.5);
+    expect(a / b).toBeGreaterThan(1.9);
+    expect(a / b).toBeLessThan(2.05);
+  });
+
+  it('slows a ball steadily by the roll of its surface, so it goes as far as the square of its speed', () => {
+    for (const [speed, roll] of [
+      [10, 5],
+      [20, 5],
+      [10, 7.5],
+      [20, 7.5],
+      [10, 10],
+      [20, 10],
+      [40, 10],
+    ]) {
+      const { far, seconds } = rollOn({ surfaces: [{ drag: 0, roll }] }, speed);
+      const expected = (speed * speed) / (2 * roll);
+      expect(far / expected, `${speed} u/s at a roll of ${roll}`).toBeGreaterThan(0.95);
+      expect(far / expected, `${speed} u/s at a roll of ${roll}`).toBeLessThan(1.05);
+      // and stops in the time a steady slowing takes, and a window more for it to be judged at rest
+      expect(seconds).toBeLessThan(speed / roll + 0.5);
+    }
+  });
+
+  it('stops a ball dead by roll, and never sends it back the way it came', () => {
+    const w = world({ holes: [], surfaces: [{ drag: 0, roll: 10 }] });
+    const i = w.spawn(0, -80, 0, RADII[0], 3, 0, 0);
+    let backward = 0;
+    for (let s = 0; s < 120; s++) {
+      w.step(1 / 120, () => {});
+      backward = Math.min(backward, w.vx[i]);
+    }
+    expect(backward).toBe(0);
+    expect(w.vx[i]).toBe(0);
+  });
+
+  it("scales a surface's drag and roll by the kind's drag", () => {
+    const drag = [1, 2];
+    const radii = [0.42, 0.42];
+    const byDrag = (kind: number) => rollOn({ radii, drag, surfaces: [{ drag: 2 }] }, 20, kind).far;
+    const byRoll = (kind: number) => rollOn({ radii, drag, surfaces: [{ drag: 0, roll: 5 }] }, 20, kind).far;
+    expect(byDrag(1) / byDrag(0)).toBeGreaterThan(0.48);
+    expect(byDrag(1) / byDrag(0)).toBeLessThan(0.53);
+    expect(byRoll(1) / byRoll(0)).toBeGreaterThan(0.48);
+    expect(byRoll(1) / byRoll(0)).toBeLessThan(0.52);
+  });
+
+  it('stops a ball in a bunker that the green would have let roll on', () => {
+    // the green's drag is ooergolf's 0.8; sand from x 0 to 30 drags ten times harder
+    const surfaces: Surface[] = [{ drag: 0.8 }, { drag: 8 }];
+    const surface = ground((tx) => (tx >= 30 && tx < 40 ? 1 : 0));
+    const w = world({ holes: [], surfaces, surface });
+    const i = w.spawn(0, -10, 0, RADII[0], 20, 0, 0);
+    for (let f = 0; f < 600; f++) w.step(DT, () => {});
+    expect(w.x[i]).toBeGreaterThan(0);
+    expect(w.x[i]).toBeLessThan(30);
+    expect(rollOn({ surfaces: [{ drag: 0.8 }] }, 20).far).toBeGreaterThan(20);
+  });
+
+  it("bounces a ball off a wall by the bounce of the tile it is put out of, or the tuning's", () => {
+    // no drag, so the ball gets to the wall at the speed it was sent
+    const surfaces: Surface[] = [{ drag: 0 }, { drag: 0, bounce: 0.9 }, { drag: 0 }];
+    // a rock column, all of it of the bouncy surface
+    expect(offWall({ surfaces, surface: ground((tx) => (tx === 40 ? 1 : 0)) }).across).toBeCloseTo(18, 0);
+    // of a surface with no bounce of its own, the tuning's wallRestitution
+    const plain = offWall({ surfaces, surface: ground((tx) => (tx === 40 ? 2 : 0)), tuning: { wallRestitution: 0.3 } });
+    expect(plain.across).toBeCloseTo(6, 0);
+    // of a surface the table has no entry for, the tuning's figures
+    expect(offWall({ surfaces, surface: ground((tx) => (tx === 40 ? 7 : 0)) }).across).toBeCloseTo(2, 1);
+    // the face of a raised floor tile is the tile's too
+    const floor = new Float32Array(GRID.cols * GRID.rows);
+    for (let ty = 0; ty < GRID.rows; ty++) for (let tx = 40; tx < GRID.cols; tx++) floor[ty * GRID.cols + tx] = 4;
+    const raised = offWall({ solid: solid(), floor, surfaces, surface: ground((tx) => (tx >= 40 ? 1 : 0)) });
+    expect(raised.across).toBeCloseTo(18, 0);
+  });
+
+  it('reads the surfaces every step, so one rewritten in place is felt on the next', () => {
+    const surfaces: Surface[] = [{ drag: 0 }, { drag: 20 }];
+    const surface = ground(() => 0);
+    const w = world({ holes: [], surfaces, surface });
+    const i = w.spawn(0, -80, 0, RADII[0], 20, 0, 0);
+    for (let f = 0; f < 30; f++) w.step(DT, () => {});
+    expect(w.vx[i]).toBeCloseTo(20, 3);
+    surface.fill(1);
+    w.step(DT, () => {});
+    expect(w.vx[i]).toBeLessThan(15);
+  });
+
+  it('drags a ball on a raised green by the green, and one off the grid counts as on surface 0', () => {
+    const floor = new Float32Array(GRID.cols * GRID.rows).fill(2);
+    const surfaces: Surface[] = [{ drag: 5.5 }, { drag: 1 }];
+    const green = rollOn({ floor, surfaces, surface: ground(() => 1) }, 20);
+    expect(green.far).toBeGreaterThan(15);
+    // no border of rock, and surface 0 bounces: past the last column is off the grid, surface 0's wall
+    const open = new Uint8Array(GRID.cols * GRID.rows);
+    const zero: Surface[] = [{ drag: 0, bounce: 0.9 }];
+    expect(
+      offWall({ solid: open, surfaces: zero }, 0, 0, GRID.originX + GRID.cols * GRID.tile - 10).across,
+    ).toBeCloseTo(18, 0);
   });
 });

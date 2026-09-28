@@ -597,6 +597,12 @@ bumpers are binned by tile.
 
 ### 9. Surfaces: drag, roll and bounce by tile, and drag by kind
 
+As built: off the grid is surface 0, and a tile whose byte has no entry in
+the table, or a world given no table, takes the tuning's figures. Roll never
+takes a ball past standing still: slower than a step of it, the ball stops
+dead. The table of distances and times is in the README, measured, and its
+row for ooergolf's present drag of 0.8 matches the game's own figures.
+
 **What:** a surface byte per tile, beside `solid` and `floor`, indexes the
 `surfaces` table. A ball on the floor is slowed by the drag of the surface
 under its middle, times its kind's `drag`. `roll` is a steady slowing on
