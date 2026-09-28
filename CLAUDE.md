@@ -20,7 +20,7 @@ defaults to today's behaviour, and the existing tests pass unchanged.
 | --------- | ------ | ----------------------------------------------------------------------------- |
 | pushminer | v0.1.0 | balls, rock, one hole, pushers, belts, the magnet                             |
 | coinpush  | v0.3.0 | discs, floor heights, the bottom, pushers                                     |
-| ooergolf  | v0.4.1 | balls, rock, floor heights, surfaces, bouncing boxes, belts, a cup with a rim |
+| ooergolf  | v0.5.1 | balls, rock, floor heights, surfaces, bouncing boxes, belts, a cup with a rim |
 | template  | v0.1.0 | `~/projects/artshape-game-template`, what new games start from                |
 
 arena and bearing do not use it. bearing moved to Rapier, because it
