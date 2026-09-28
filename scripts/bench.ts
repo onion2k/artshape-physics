@@ -336,8 +336,9 @@ function machine(seed: number) {
  * the game has chosen. On it are what it has so far of the obstacles the
  * design asks for: a wall of rock one tile thick across part of it, a
  * sliding barrier, a windmill of four thin blades, eight bumpers that
- * bounce at 1.3, a bunker of sand on a green, and a cup, caught by its rim
- * alone. A ball holed is put down again, on the tee or somewhere clear.
+ * bounce at 1.3, a bunker of sand on a green, hills, and a cup, caught by
+ * its rim alone. A ball holed is put down again, on the tee or somewhere
+ * clear.
  */
 const COURSE = {
   grid: { cols: 24, rows: 24, originX: -36, originY: -36, tile: 3 } satisfies Grid,
@@ -348,6 +349,15 @@ const COURSE = {
   surfaces: [{ drag: 0.8 }, { drag: 8 }] satisfies Surface[],
   /** A bunker three tiles by three, across the way straight up from the tee. */
   bunker: { tx: [10, 13], ty: [6, 9] },
+  /**
+   * The terrain, a height a tile: a mound three high east of the fairway, a hollow two and a half deep in the
+   * far west corner with a post in it, and the green beyond the wall falling away along y, a post on the fall.
+   * The ground under the tee, the windmill, the barrier and round the cup is level, as the game lays them.
+   */
+  terrain: (tx: number, ty: number) =>
+    3 * Math.max(0, 1 - Math.hypot(tx - 18, ty - 4) / 3.5) -
+    2.5 * Math.max(0, 1 - Math.hypot(tx - 4, ty - 20) / 3) +
+    (tx >= 16 && tx <= 22 && ty >= 17 && ty <= 22 ? 0.4 * (ty - 19.5) * (tx === 16 || tx === 22 ? 0.5 : 1) : 0),
   /** The wall: one row of rock tiles from the west border to the middle, leaving the east side open. */
   wall: { row: 16, to: 13 },
   /** The barrier: a bar a quarter of a unit half-thick, going to and fro along x across the way up the open side. */
@@ -388,6 +398,9 @@ function course(seed: number) {
     solid,
     radii: COURSE.radii,
     holes: [COURSE.cup],
+    terrain: Float32Array.from({ length: grid.cols * grid.rows }, (_, t) =>
+      COURSE.terrain(t % grid.cols, Math.floor(t / grid.cols)),
+    ),
     random,
     tuning: COURSE.tuning,
     surfaces: COURSE.surfaces,
@@ -462,9 +475,10 @@ function course(seed: number) {
 /**
  * One ball shot round the course: at each speed in turn, in each direction,
  * each shot taken from where the last came to rest, as a round is played.
- * The twelve take 2420 frames with the bumpers, the bunker, the pieces and
- * the smooth walls on the course (2240 before any of them), so the timing,
- * at 2700, runs a little way into the first again.
+ * The twelve take 2800 frames with the hills on the course, 2420 before
+ * them with the bumpers, the bunker, the pieces and the smooth walls, and
+ * 2240 before any of those, so the timing, at 3000, runs a little way into
+ * the first again.
  */
 function round(seed: number) {
   const { world, step } = course(seed);
@@ -503,7 +517,7 @@ function crowd(seed: number) {
   while (world.count < COURSE.capacity) {
     const x = (random() * 2 - 1) * spread,
       y = (random() * 2 - 1) * spread;
-    if (clear(x, y)) world.spawn(0, x, y, COURSE.radii[0]);
+    if (clear(x, y)) world.spawn(0, x, y, world.floorAt(x, y) + COURSE.radii[0]);
   }
   for (let f = 0; f < 60; f++) step();
   const speed = SPEEDS[SPEEDS.length - 1];
@@ -513,7 +527,7 @@ function crowd(seed: number) {
       while (!world.alive[i]) {
         const x = (random() * 2 - 1) * spread,
           y = (random() * 2 - 1) * spread;
-        if (clear(x, y)) world.spawn(0, x, y, COURSE.radii[0]);
+        if (clear(x, y)) world.spawn(0, x, y, world.floorAt(x, y) + COURSE.radii[0]);
       }
       if (!world.asleep[i]) continue;
       const a = random() * Math.PI * 2;
@@ -549,7 +563,7 @@ const SCENES: Scene[] = [
   {
     name: 'one ball shot round a golf course',
     budget: 0.1,
-    frames: 2700,
+    frames: 3000,
     setup: () => round(1),
   },
   {

@@ -108,6 +108,33 @@ tiles, and what falls into a hole is reported through a callback.
   rolls onto it falls and is reported as `BOTTOM`, over the water, and what
   is thrown over it lands beyond. Rock stays as tall as the world.
 
+- **Terrain** is hills and hollows on the steps: one height a tile, at the
+  tile's middle, smoothed between as a cubic B-spline. The ground it makes is
+  smooth in its slope and its curve, never above or below the heights given,
+  and exactly flat over a run of equal heights; the price is that a lone
+  raised tile is a mound four ninths as high. A ball is put out of the ground
+  along its normal, so it rolls down a slope by gravity's share along it,
+  breaks across one, runs up a hill and comes back, and bounces off a slope
+  down it; its middle stands its radius from the ground along the normal. It
+  comes to rest only where its surface's `roll` holds it, where gravity times
+  the slope's sine is no more than the roll: on ooergolf's green, a roll of 16
+  against gravity's 70, on slopes up to 13.2°. On ground too steep to hold
+  it, with nothing else holding it, it is neither settled nor put to sleep. A
+  coin lies along the ground, held by the felt. The terrain is never a wall;
+  the steps are, judged from the ground under a body. `floorAt` is the step
+  and the terrain together, and `heightAt` and `slopeAt`, from
+  `artshape-physics/terrain`, read the terrain alone, for drawing it as the
+  world rolls on it.
+
+  The world will not be made on terrain it cannot keep a ball on, and throws,
+  naming the tile: tiles side by side more than half a tile apart, the rock's
+  among them, since each shapes the ground two tiles round it; tiles
+  narrower than the biggest ball; or ground that is not level round a hole as
+  far as its smoothing reaches the ground under a ball on the hole's edge,
+  which on ooergolf's figures is three tiles all round the cup's own. A cup's
+  rim is level, and a rim that leans with a sloping green is still to come.
+  Terrain flat at nothing steps a world exactly as none does.
+
 - **Surfaces**, one byte a tile beside the rock and the floor's heights, say
   what each tile of floor is made of, from a table of them: how hard it
   drags a ball rolling on it, how steadily it slows it (`roll`), and how its
@@ -195,6 +222,7 @@ const world = new World({
   radii: [0.42, 1.0], // one radius a kind of body
   thickness: [0.24, 0], // and a thickness for a kind that is a disc; none, or left out, and it is a ball
   floor: heights, // one height a tile, for tiers and steps; left out, the floor is flat
+  terrain: hills, // one height a tile, smoothed into ground a ball rolls on, over the steps; never a wall
   bottom: -6, // below which a body has fallen out of the world
   holes: [{ x: 0, y: 0, radius: 5.5, depth: 14 }],
   bounce: [1, 0.6], // how bouncy each kind is, scaling every restitution it meets; left out, 1
@@ -242,6 +270,17 @@ sleeps where it lands, however long it was held; one on a box's top lies flat an
 is carried; a ball bounces off a wall, the floor and another by their
 figures times its kind's bounce, and a coin never does; chance from a seed
 gives the same world twice.
+
+The terrain has tests of its own: the ground smooth across every seam and
+exactly flat where it should be; a ball speeding down an even slope at
+gravity's share, resting where its surface holds it and rolling away off a
+twentieth steeper, struck up a hill and back, bounced down a slope, breaking
+across one, and a putt aimed above a cup breaking into it where one aimed at
+it misses; the steepest slope climbed with no wall in it, a step on a hill
+still a wall, and no ball more than a tenth into the sharpest ground there
+may be, however hard it is struck; a coin lying along a slope; the terrain
+refused where the world could not keep a ball on it; and terrain flat at
+nothing stepping a world value for value as none does.
 
 Six scenes, run from seeds, hold the world bit for bit to how v0.3.0 stepped
 it, so a game that has not asked for anything new gets nothing new. The

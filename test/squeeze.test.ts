@@ -43,8 +43,12 @@ function walled(): Uint8Array {
   return out;
 }
 
-/** Coins dropped within `spread` of the middle, from half a unit to four and a half up, as the disc tests drop a heap. */
-function heap(seed: number, count: number, spread: number, squeezedStill: boolean): World {
+/**
+ * Coins dropped within `spread` of the middle, from half a unit to four and a
+ * half up, as the disc tests drop a heap; on terrain rising `slope` a unit
+ * along x, if given one, and dropped from as high above it.
+ */
+function heap(seed: number, count: number, spread: number, squeezedStill: boolean, slope = 0): World {
   const random = seeded(seed);
   const w = new World({
     capacity: count,
@@ -52,13 +56,18 @@ function heap(seed: number, count: number, spread: number, squeezedStill: boolea
     solid: walled(),
     radii: [R],
     thickness: [H],
+    terrain: slope
+      ? Float32Array.from({ length: GRID.cols * GRID.rows }, (_, t) => (t % GRID.cols) * slope * GRID.tile)
+      : undefined,
     random,
     tuning: { cell: 1.2, squeezedStill },
   });
   for (let k = 0; k < count; k++) {
     const r = Math.sqrt(random()) * spread,
       t = random() * Math.PI * 2;
-    w.spawn(0, Math.cos(t) * r, Math.sin(t) * r, 0.5 + random() * 4);
+    const x = Math.cos(t) * r,
+      y = Math.sin(t) * r;
+    w.spawn(0, x, y, w.floorAt(x, y) + 0.5 + random() * 4);
   }
   return w;
 }
@@ -175,6 +184,16 @@ describe('a coin squeezed in a heap', () => {
         spun: 0,
         byW: 0,
       });
+    }
+  });
+
+  it('with squeezedStill, keeps to it on terrain: a heap poured on a slope, lying along it', () => {
+    // A slope of a fifth, which the felt holds a coin on: the ground meets a coin leaning with it, and pushes it
+    // square to itself, and a coin squeezed there is to be read back going only where it went, as on the flat.
+    for (const seed of [1, 2]) {
+      const w = heap(seed, 100, 2, true, 0.2);
+      expect(readBack(w, 3), `seed ${seed}`).toEqual({ faster: 0, byV: 0, spun: 0, byW: 0 });
+      expect(w.deepest(true).depth, `seed ${seed}: nothing at rest cuts anything`).toBeLessThanOrEqual(CUT + 1e-4);
     }
   });
 

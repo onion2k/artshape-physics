@@ -19,7 +19,9 @@
  * the caller says, and a body rests on the tile under it. A tile whose floor
  * stands above a body's middle is a wall to it, so a step is a wall from
  * below and an edge from above, and what goes over the edge falls to the
- * tile it lands on. Below the world's bottom a body has left it.
+ * tile it lands on. On the steps may lie terrain, hills smoothed from a
+ * height a tile, which a ball rolls down and a coin lies along, and which is
+ * never a wall. Below the world's bottom a body has left it.
  *
  * The world knows nothing of any game. It is handed a grid of solid tiles
  * to keep out of, the floor's heights, the holes things fall out of it
@@ -28,6 +30,7 @@
  * fell in, or out, through a callback.
  */
 import { BORNE, Discs, SLOP } from './disc';
+import { sample, terrainProblem } from './terrain';
 
 /** The tile grid the world lies on: tiles `tile` across, `cols` by `rows` of them, from an origin. */
 export interface Grid {
@@ -221,6 +224,25 @@ const DISC_PASSES = 2;
 const MOST_PIECES = 64;
 /** A ball's mark, beside the floor's 1, a box top's 2 and BORNE's 4, for having met the floor at a look of this step. */
 const FLOORED = 8;
+/**
+ * A ball's mark for lying this step on terrain too steep for its surface to
+ * hold it, by its roll and its drag, with nothing else holding it. It is
+ * neither settled nor put to sleep. The slow-speed settling is how a slow roll ends on the flat, and on
+ * a slope that cannot hold a ball it stopped one creeping down it at a fifth
+ * of a unit a second, where gravity past the roll would have had it rolling
+ * away, and it slept there, hung on the slope.
+ */
+const STEEP = 16;
+/**
+ * A ball's mark for having been held this step by something beside the
+ * ground: another body, the rock, a box, a post or a rim. A ball on ground
+ * too steep to hold it is kept awake, since it is going somewhere, however
+ * slowly it has started: judged by how far it had got in a window, one on a
+ * slope a twentieth steeper than its surface holds had crept a sixth of the
+ * way to being awake and was put to sleep, hung on the slope. Held against
+ * something, it may be at rest there, and sleep.
+ */
+const PROPPED = 32;
 const AGAIN = 0.02;
 /** How far under the floor a disc may still be, once put out of it, before it is put out of it again. */
 const LANDED = 0.02;
@@ -279,6 +301,18 @@ export interface WorldOptions {
    * above a body's middle is a wall to it. Read every step, like the rock.
    */
   floor?: Float32Array;
+  /**
+   * How high the ground rises on each tile, at its middle, one a tile, row
+   * by row, smoothed between: hills and hollows on top of the floor's steps,
+   * which a ball rolls down and breaks across, and which are never a wall.
+   * Left out, the floor is its steps alone, as it always was. The world will
+   * not be made on terrain it cannot keep a ball on, and throws, naming the
+   * tile: tiles side by side more than half a tile apart, tiles narrower
+   * than the biggest ball, or ground that is not level round a hole as far
+   * as it shapes the ground under a ball on its edge. Read every step, like
+   * the floor, and checked only when the world is made.
+   */
+  terrain?: Float32Array;
   /** Below this height a body has fallen out of the world: reported like one down a hole, and its slot freed. */
   bottom?: number;
   /**
@@ -457,6 +491,10 @@ export class World {
   solid: Uint8Array;
   /** How high the floor stands on each tile, or nothing for a flat floor at 0; the grid's owner may rewrite it. */
   heights: Float32Array | null;
+  /** How high the ground rises on each tile, smoothed between, or nothing for the floor's steps alone; the grid's owner may rewrite it. */
+  terrain: Float32Array | null;
+  /** The terrain as it was last read: its rise, and its slope along x and along y. */
+  private readonly ground = new Float64Array(3);
   /** Which surface each tile is, or nothing for all of surface 0; the grid's owner may rewrite it. */
   surface: Uint8Array | null;
   private readonly surfaces: readonly Surface[];
@@ -511,6 +549,7 @@ export class World {
     this.capacity = capacity;
     this.solid = solid;
     this.heights = options.floor ?? null;
+    this.terrain = options.terrain ?? null;
     this.bottom = options.bottom ?? -Infinity;
     this.grid = grid;
     this.holes = options.holes ?? [];
@@ -520,6 +559,10 @@ export class World {
     this.surface = options.surface ?? null;
     this.surfaces = options.surfaces ?? [];
     this.maxRadius = Math.max(...radii);
+    if (this.terrain) {
+      const problem = terrainProblem(this.terrain, grid, this.maxRadius, this.holes);
+      if (problem) throw new Error(problem);
+    }
     this.tune = { ...DEFAULT_TUNING, ...options.tuning };
     // called each time, not captured, so a caller who swaps Math.random out later is heard
     this.random = options.random ?? (() => Math.random());
@@ -859,7 +902,7 @@ export class World {
       // it says it is going: a stack of spheres under gravity carries
       // velocity it never turns into distance, and would never rest by speed.
       const speed2 = vx[i] * vx[i] + vy[i] * vy[i] + vz[i] * vz[i];
-      if (speed2 < this.tune.settleBelow) {
+      if (speed2 < this.tune.settleBelow && !(this.onFloor[i] & STEEP)) {
         const k = this.tune.settle;
         vx[i] *= k;
         vy[i] *= k;
@@ -872,7 +915,8 @@ export class World {
         if (
           dx * dx + dy * dy + dz * dz < this.tune.sleepDrift * this.tune.sleepDrift &&
           (this.tune.sleepInAir || this.onFloor[i] & BORNE) &&
-          speed2 < this.tune.sleepSpeed * this.tune.sleepSpeed
+          speed2 < this.tune.sleepSpeed * this.tune.sleepSpeed &&
+          !(this.onFloor[i] & STEEP)
         ) {
           asleep[i] = 1;
           vx[i] = vy[i] = vz[i] = 0;
@@ -1134,7 +1178,7 @@ export class World {
         }
         vx[i] *= 0.98;
         vy[i] *= 0.98;
-        this.onFloor[i] |= (nzz < -0.5 ? 1 : 0) | (nzz < 0 ? BORNE : 0);
+        this.onFloor[i] |= PROPPED | (nzz < -0.5 ? 1 : 0) | (nzz < 0 ? BORNE : 0);
         return;
       }
     }
@@ -1187,6 +1231,8 @@ export class World {
         this.wz[j] -= (nxx * fy - nyy * fx) * k;
       }
     }
+    this.onFloor[i] |= PROPPED;
+    this.onFloor[j] |= PROPPED;
     if (nzz < -0.5) this.onFloor[i] |= 1;
     if (nzz > 0.5) this.onFloor[j] |= 1;
     if (nzz < 0) this.onFloor[i] |= BORNE;
@@ -1204,13 +1250,39 @@ export class World {
     return this.surfaces[on ? this.surface![ty * this.grid.cols + tx] : 0];
   }
 
-  /** How high the floor stands under a point: the tile's height, or nothing off the grid or on a flat floor. */
+  /** How high the floor stands under a point: the tile's step and the terrain's rise, or nothing off the grid or on a flat floor. */
   floorAt(px: number, py: number): number {
+    if (!this.heights && !this.terrain) return 0;
+    const tx = Math.floor((px - this.grid.originX) / this.grid.tile),
+      ty = Math.floor((py - this.grid.originY) / this.grid.tile);
+    if (tx < 0 || ty < 0 || tx >= this.grid.cols || ty >= this.grid.rows) return 0;
+    const step = this.heights ? this.heights[ty * this.grid.cols + tx] : 0;
+    if (!this.terrain) return step;
+    sample(this.terrain, this.grid, px, py, this.ground);
+    return step + this.ground[0];
+  }
+
+  /** The height of the floor's step alone under a point: nothing off the grid, or on a floor of no steps. */
+  private stepAt(px: number, py: number): number {
     if (!this.heights) return 0;
     const tx = Math.floor((px - this.grid.originX) / this.grid.tile),
       ty = Math.floor((py - this.grid.originY) / this.grid.tile);
     if (tx < 0 || ty < 0 || tx >= this.grid.cols || ty >= this.grid.rows) return 0;
     return this.heights[ty * this.grid.cols + tx];
+  }
+
+  /**
+   * The terrain under a point, read into `ground`: its rise, and its slope
+   * along x and along y. Off the grid it is flat at nothing, as the floor
+   * is. Only a world with terrain asks.
+   */
+  private terrainAt(px: number, py: number): Float64Array {
+    const g = this.ground;
+    const tx = Math.floor((px - this.grid.originX) / this.grid.tile),
+      ty = Math.floor((py - this.grid.originY) / this.grid.tile);
+    if (tx < 0 || ty < 0 || tx >= this.grid.cols || ty >= this.grid.rows) g.fill(0);
+    else sample(this.terrain!, this.grid, px, py, g);
+    return g;
   }
 
   /**
@@ -1249,6 +1321,7 @@ export class World {
         this.vy[ball] -= wy * vn;
         this.vz[ball] -= wz * vn;
       }
+      this.onFloor[ball] |= PROPPED;
       if (wz > 0.5) this.onFloor[ball] |= 1;
     }
   }
@@ -1327,7 +1400,7 @@ export class World {
     for (let k = 0, n = this.awakeCount; k < n; k++) {
       const i = awake[k];
       if (!alive[i] || asleep[i] || carried[i] || h[i] === 0 || !this.again[i]) continue;
-      if (d.plane(i, 0, 0, 0, 0, 0, 1, 0, 0, this.floorUnder)) d.solve(-1, false);
+      if (this.discGround(i)) d.solve(-1, false);
     }
   }
 
@@ -1381,16 +1454,28 @@ export class World {
       return false;
     }
     const d = this.discs!;
-    if (d.plane(i, 0, 0, 0, 0, 0, 1, 0, 0, this.floorUnder)) {
+    if (this.discGround(i)) {
       d.solve(-1);
       // A coin landing hard at a tilt is put out of the floor a point of its rim at a time, and each push turns
       // it and dips another: gone over once, it ended the step a sixteenth of a unit under. So it is looked at
       // again, and if it is still well in, put out again, which halves what is left each time.
-      for (let more = 0; more < 2 && d.plane(i, 0, 0, 0, 0, 0, 1, 0, 0, this.floorUnder) && d.deepest > LANDED; more++)
-        d.solve(-1, false);
+      for (let more = 0; more < 2 && this.discGround(i) && d.deepest > LANDED; more++) d.solve(-1, false);
     }
     if (this.heights) this.lips(i);
     return true;
+  }
+
+  /**
+   * A disc against the ground under it: the floor, as a plane square to the
+   * ground's normal under the disc's middle, which leans with the terrain,
+   * standing as high under each point of its rim as the ground there. How
+   * many points of its rim were found in it.
+   */
+  private discGround(i: number): number {
+    if (!this.terrain) return this.discs!.plane(i, 0, 0, 0, 0, 0, 1, 0, 0, this.floorUnder);
+    const g = this.terrainAt(this.x[i], this.y[i]);
+    const lean = Math.sqrt(1 + g[1] * g[1] + g[2] * g[2]);
+    return this.discs!.plane(i, 0, 0, 0, -g[1] / lean, -g[2] / lean, 1 / lean, 0, 0, this.floorUnder);
   }
 
   /**
@@ -1418,11 +1503,14 @@ export class World {
       if (ux < 0 || uy < 0 || ux >= grid.cols || uy >= grid.rows) continue;
       const u = uy * grid.cols + ux;
       if (solid[u] === 1 || heights![u] === own) continue;
-      const top = Math.max(own, heights![u]);
-      if (z[i] - bound >= top || z[i] + bound <= top) continue;
       // the edge the two tiles share, and the way from the higher of them to the lower
       const ex = grid.originX + (tx + (ox > 0 ? 1 : 0)) * grid.tile,
         ey = grid.originY + (ty + (oy > 0 ? 1 : 0)) * grid.tile;
+      // On terrain the lip rises and falls with it, and is taken as level where the disc is nearest it: a coin is
+      // small beside the tiles the terrain is smoothed over.
+      let top = Math.max(own, heights![u]);
+      if (this.terrain) top += this.terrainAt(ox ? ex : x[i], oy ? ey : y[i])[0];
+      if (z[i] - bound >= top || z[i] + bound <= top) continue;
       const down = heights![u] < own ? 1 : -1;
       if (Math.abs(ox ? x[i] - ex : y[i] - ey) >= bound) continue;
       if (d.lip(i, ex, ey, top, oy ? 1 : 0, ox ? 1 : 0, ox * down, oy * down)) d.solve(-1);
@@ -1585,9 +1673,13 @@ export class World {
     // stands, its own floor is rock to it, and it is put out of it sideways. So a disc is no lower to the rock than
     // it was when the step began.
     const zi0 = this.discs && this.h[i] > 0 ? Math.max(z[i], this.discs.pz[i]) : z[i];
+    // The terrain is never a wall, only the floor's steps are, and they are judged from the ground under the body:
+    // a step is as high above a ball on a hill as it stands above the ground there, whatever the hill's height.
+    // Judged from its middle, a ball on a hillside would find the tiles uphill standing above it, and walls.
+    const zs = this.terrain && this.heights ? zi0 - this.terrainAt(x[i], y[i])[0] : zi0;
     // Down a hole, below the floor it is cut in, the floor round it stands above a body and would be a wall to it,
     // and shove it about as it fell; the pit's own wall holds it there, and the rock still does.
-    const zi = this.heights && this.inPit(i, zi0) ? Infinity : zi0;
+    const zi = this.heights && this.inPit(i, zi0) ? Infinity : zs;
     if (this.wallAt(x[i], y[i], zi)) {
       const bx = this.lastX[i],
         by = this.lastY[i];
@@ -1604,6 +1696,7 @@ export class World {
       } else {
         this.outOfRock(i);
       }
+      this.onFloor[i] |= PROPPED;
     }
     const px = x[i],
       py = y[i],
@@ -1652,6 +1745,7 @@ export class World {
         dy /= d;
         x[i] += dx * (rad - d);
         y[i] += dy * (rad - d);
+        this.onFloor[i] |= PROPPED;
         // A disc is only put out of the rock. Its speed is read back from how far it got when its step ends, and
         // nothing reads it before then, so nothing given it here would last; and a disc does not bounce.
         if (this.h[i] > 0) continue;
@@ -1672,6 +1766,8 @@ export class World {
   private outOfRock(i: number) {
     const tx = Math.floor((this.x[i] - this.grid.originX) / this.grid.tile),
       ty = Math.floor((this.y[i] - this.grid.originY) / this.grid.tile);
+    // no higher than it measured from the ground under it, as the walls are
+    const z = this.terrain && this.heights ? this.z[i] - this.terrainAt(this.x[i], this.y[i])[0] : this.z[i];
     for (let ring = 1; ring < 12; ring++) {
       let best = -1,
         bestD = Infinity;
@@ -1682,7 +1778,7 @@ export class World {
             ny = ty + oy;
           if (nx < 0 || ny < 0 || nx >= this.grid.cols || ny >= this.grid.rows) continue;
           const t = ny * this.grid.cols + nx;
-          if (this.solid[t] || (this.heights !== null && this.heights[t] > this.z[i])) continue;
+          if (this.solid[t] || (this.heights !== null && this.heights[t] > z)) continue;
           const d = ox * ox + oy * oy;
           if (d < bestD) {
             bestD = d;
@@ -1761,6 +1857,7 @@ export class World {
         vz[i] -= nz * vn * (1 + e);
       }
       // what it holds up is held up, and on its flat top a ball lies flat, as on a box's
+      this.onFloor[i] |= PROPPED;
       if (nz > 0) this.onFloor[i] |= BORNE;
       if (nz > 0.5) this.onFloor[i] |= 2;
     }
@@ -1927,6 +2024,7 @@ export class World {
     }
     // on top of the box is a floor: it lies flat there
     else if (wnz > 0.5) this.onFloor[i] |= 2;
+    this.onFloor[i] |= PROPPED;
     if (wnz > 0) this.onFloor[i] |= BORNE;
   }
 
@@ -2030,6 +2128,7 @@ export class World {
       vy[i] -= ny * vn * (1 + e);
       vz[i] -= nz * vn * (1 + e);
     }
+    this.onFloor[i] |= PROPPED;
     if (nz > 0) this.onFloor[i] |= BORNE;
   }
 
@@ -2084,6 +2183,10 @@ export class World {
       this.remove(i);
       return;
     }
+    if (this.terrain) {
+      this.onGround(i, last, near, nd, ndx, ndy);
+      return;
+    }
     const fz = this.floorAt(x[i], y[i]);
     if (z[i] < fz + r[i]) {
       z[i] = fz + r[i];
@@ -2121,13 +2224,110 @@ export class World {
     }
   }
 
+  /**
+   * The floor under a ball, on terrain. The ground's normal leans with its
+   * slope, and the ball is put out of the ground along it and bounced off it:
+   * a ball at rest on a slope is drawn into it by gravity each step and left
+   * going down it, by gravity's share along it, and that is the whole of how
+   * a ball rolls downhill. Its middle stands its radius from the ground along
+   * the normal, which is higher above the ground than its radius, by as much
+   * as the ground leans. It is dragged and slowed along the ground, and what
+   * it has across it, bouncing, is its own. On level terrain it is the flat
+   * floor to the last digit, reckoned the same way, so a world given terrain
+   * flat at nothing steps as one given none.
+   */
+  private onGround(i: number, last: boolean, near: Hole | null, nd: number, ndx: number, ndy: number) {
+    const { x, y, z, vx, vy, vz, r } = this;
+    const g = this.terrainAt(x[i], y[i]);
+    const sx = g[1],
+      sy = g[2];
+    const fz = this.stepAt(x[i], y[i]) + g[0];
+    const lean = Math.sqrt(1 + sx * sx + sy * sy);
+    const nx = -sx / lean,
+      ny = -sy / lean,
+      nz = 1 / lean;
+    const lift = r[i] * lean;
+    if (z[i] < fz + lift) {
+      z[i] = fz + lift;
+      const vn = vx[i] * nx + vy[i] * ny + vz[i] * nz;
+      if (vn < 0) {
+        // what it keeps of its speed into the ground, going back out, reckoned as the flat floor reckons it, so that
+        // on level ground the sum is the floor's own
+        const back = vn < -this.tune.bounceFrom ? -vn * this.tune.restitution * this.kindBounce[this.kind[i]] : 0;
+        vx[i] = vx[i] - nx * vn + nx * back;
+        vy[i] = vy[i] - ny * vn + ny * back;
+        vz[i] = vz[i] - nz * vn + nz * back;
+      }
+      this.onFloor[i] |= 1 | BORNE | FLOORED;
+    }
+    if (!last || !(this.onFloor[i] & FLOORED)) return;
+    const under = this.surfaces.length
+        ? this.surfaceOf(
+            Math.floor((x[i] - this.grid.originX) / this.grid.tile),
+            Math.floor((y[i] - this.grid.originY) / this.grid.tile),
+          )
+        : undefined,
+      kd = this.kindDrag[this.kind[i]];
+    const dragBy = (under ? under.drag : this.tune.floorDrag) * kd;
+    const drag = 1 / (1 + dragBy * this.tune.step);
+    // Its speed square to the ground is taken off while the rest is dragged and slowed, in place, and put back
+    // after, as the flat floor drags its speed along the level in place: kept aside unrounded, the speed along
+    // the ground came back a float's last digit off the floor's, and a flat terrain would not be the floor.
+    const vn = vx[i] * nx + vy[i] * ny + vz[i] * nz;
+    vx[i] = (vx[i] - nx * vn) * drag;
+    vy[i] = (vy[i] - ny * vn) * drag;
+    vz[i] = (vz[i] - nz * vn) * drag;
+    const hold = (under?.roll ?? 0) * kd,
+      roll = hold * this.tune.step;
+    if (roll > 0) {
+      // the speed along the level first, as the flat floor takes it, and then with the rise, so that on level ground
+      // the sum is the floor's own: Math.hypot of three, the third nothing, rounds otherwise than of two one time
+      // in a hundred
+      const speed = Math.hypot(Math.hypot(vx[i], vy[i]), vz[i]);
+      const keep = speed > roll ? (speed - roll) / speed : 0;
+      vx[i] *= keep;
+      vy[i] *= keep;
+      vz[i] *= keep;
+    }
+    vx[i] += nx * vn;
+    vy[i] += ny * vn;
+    vz[i] += nz * vn;
+    if (near && nd < near.radius + (near.reach ?? 2.5)) {
+      const pull = near.pull ?? 6;
+      vx[i] -= (ndx / nd) * pull * this.tune.step;
+      vy[i] -= (ndy / nd) * pull * this.tune.step;
+    }
+    // Gravity's pull along the ground past what the surface holds, with nothing else holding it: not a ball to be
+    // settled to a stop, nor put to sleep. The drag holds a ball as well as the roll does, against as much pull as
+    // it drags to less than the sleep drift in a window. Judged by the roll alone, a ball the drag and the roll
+    // together had stopped, on a slope a hair steeper than the roll holds, was kept awake for good going nowhere,
+    // as six seeds in five hundred of the fuzzer's left a ball in its hollow; and on a surface with drag and no
+    // roll a ball near the bottom of a hollow, on ground a hair out of level, crept on toward it awake for ever.
+    const holds = hold + (dragBy * this.tune.sleepDrift) / (this.tune.sleepSteps * this.tune.step);
+    if (
+      (sx !== 0 || sy !== 0) &&
+      !(this.onFloor[i] & PROPPED) &&
+      (this.tune.gravity * Math.sqrt(sx * sx + sy * sy)) / lean > holds
+    )
+      this.onFloor[i] |= STEEP;
+  }
+
+  /**
+   * How high a ball's middle stands resting on the ground under it: its
+   * radius above the floor, and on terrain a little more than its radius
+   * above the ground, since on a slope it touches off to one side.
+   */
+  private restingAt(i: number): number {
+    if (!this.terrain) return this.floorAt(this.x[i], this.y[i]) + this.r[i];
+    const g = this.terrainAt(this.x[i], this.y[i]);
+    return this.stepAt(this.x[i], this.y[i]) + g[0] + this.r[i] * Math.sqrt(1 + g[1] * g[1] + g[2] * g[2]);
+  }
+
   /** The cosmetic spin: flat when on the floor or a box, tumbling when not. */
   private turn(i: number) {
     const q = this.q,
       o = i * 4;
-    const resting =
-      (this.onFloor[i] & 1 && this.z[i] <= this.floorAt(this.x[i], this.y[i]) + this.r[i] + 0.05) ||
-      this.onFloor[i] & 2;
+    const resting = (this.onFloor[i] & 1 && this.z[i] <= this.restingAt(i) + 0.05) || this.onFloor[i] & 2;
     if (resting) {
       // ease to flat, whichever face is nearer up
       const zz = 1 - 2 * (q[o] * q[o] + q[o + 1] * q[o + 1]);

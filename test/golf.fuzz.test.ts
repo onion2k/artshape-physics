@@ -2,7 +2,8 @@
  * A round of golf played at random, and the rules a ball keeps however it is
  * struck. The package has no page for a fuzzer to play, so this is its
  * fuzzer: a course with every thing a golf course asks of the world (rock,
- * a raised wall, sand, water, a sliding barrier, a windmill, bumpers and a cup), a
+ * a raised wall, sand, water, hills and a hollow, a green that falls away
+ * across the way to the cup, a sliding barrier, a windmill, bumpers and a cup), a
  * ball shot from where it last came to rest in a direction and at a speed
  * from a seed, up to the 120 u/s the package is to hold at, and every fixed
  * step looked at. Each seed is played twice, each body on a window of its
@@ -73,14 +74,24 @@ const tile = (tx: number, ty: number) => ty * GRID.cols + tx;
 
 /**
  * The course: a border of rock, a wall of rock, a raised wall, water below
- * the bottom, and a bunker. The raised wall stops short of the barrier's
- * path: a box driven against a wall with a ball between them has the ball in
- * one or the other, and the rock, looked at last, wins. That is so of any
- * box and any wall, and a course is not to be laid out that way.
+ * the bottom, a bunker, and terrain: a mound three high beyond the wall of
+ * rock, by the water, a hollow two and a half deep in the far corner, a bank
+ * as steep as terrain may be in the corner by the tee, and the green before
+ * the cup falling away across the way to it, with a post standing on the
+ * fall. The raised wall stops short of the barrier's path: a
+ * box driven against a wall with a ball between them has the ball in one or
+ * the other, and the rock, looked at last, wins. That is so of any box and
+ * any wall, and a course is not to be laid out that way. Nor is a moving box
+ * to stand on a slope: with the mound's flank under the windmill's sweep, a
+ * ball rolled back against a blade by the slope each time it got ahead of it
+ * was carried round by the blades for good, going at the blades' speed. The
+ * ground under the barrier, the windmill and the cup is level at nothing, as
+ * a game would lay them.
  */
 function course() {
   const solid = new Uint8Array(GRID.cols * GRID.rows),
     floor = new Float32Array(GRID.cols * GRID.rows),
+    terrain = new Float32Array(GRID.cols * GRID.rows),
     surface = new Uint8Array(GRID.cols * GRID.rows);
   for (let ty = 0; ty < GRID.rows; ty++)
     for (let tx = 0; tx < GRID.cols; tx++) {
@@ -90,8 +101,51 @@ function course() {
       if (tx === 18 && ty >= 4 && ty <= 9) floor[t] = 2;
       if (tx >= 5 && tx <= 7 && ty >= 18 && ty <= 20) floor[t] = -30;
       if (tx >= 10 && tx <= 12 && ty >= 6 && ty <= 8) surface[t] = 1;
+      const mound = 3 * Math.max(0, 1 - Math.hypot(tx - 10, ty - 20) / 3),
+        hollow = -2.5 * Math.max(0, 1 - Math.hypot(tx - 21, ty - 4) / 3),
+        across = tx >= 15 && tx <= 21 ? 0.4 * (tx - 18) * (ty === 14 ? 1 : ty === 13 || ty === 15 ? 0.5 : 0) : 0;
+      // a bank as steep as there may be, rising half a tile a tile both ways into the corner by the tee
+      const bank = 1.5 * Math.max(0, 8 - tx - ty);
+      terrain[t] = mound + hollow + across + bank;
     }
-  return { solid, floor, surface };
+  return { solid, floor, terrain, surface };
+}
+
+/**
+ * How far a ball is into the terrain at the deepest, found by looking at the
+ * ground all round under it, and not by the world's own reckoning: its
+ * radius, less how near its middle comes to any point of the ground within
+ * its reach, on the same step of the floor as its middle. It never says
+ * further in than it is.
+ *
+ * A step's faces and edges are the rock's and the steps' to answer for, not
+ * the terrain's. A ball has no top edge of a step to meet: one flown just
+ * over a step two high, with no terrain anywhere, overlaps its edge by up to
+ * two thirds of a unit before its middle is over the step and it is put on
+ * top. That was so before there was terrain, and a hollow beside the raised
+ * wall, whose rim throws a fast ball up to the wall's height, only finds it
+ * more often.
+ */
+function intoGround(w: World, i: number, floor: Float32Array): number {
+  const x = w.x[i],
+    y = w.y[i],
+    z = w.z[i];
+  const stepOf = (px: number, py: number) =>
+    floor[tile(Math.floor((px - GRID.originX) / GRID.tile), Math.floor((py - GRID.originY) / GRID.tile))];
+  const own = stepOf(x, y);
+  let nearest = Infinity;
+  for (let ring = 0; ring <= 6; ring++) {
+    const d = (ring / 6) * R,
+      n = ring === 0 ? 1 : 16;
+    for (let k = 0; k < n; k++) {
+      const a = (k / n) * 2 * Math.PI;
+      const px = x + d * Math.cos(a),
+        py = y + d * Math.sin(a);
+      if (stepOf(px, py) !== own) continue;
+      nearest = Math.min(nearest, Math.hypot(d, w.floorAt(px, py) - z));
+    }
+  }
+  return R - nearest;
 }
 
 /** The barrier and the windmill's four blades where they are at a time. */
@@ -163,12 +217,13 @@ function intoPost(b: Bumper, x: number, y: number, z: number): number {
 
 function play(seed: number, sleepTogether: boolean): string | null {
   const random = seeded(seed);
-  const { solid, floor, surface } = course();
+  const { solid, floor, terrain, surface } = course();
   const w = new World({
     capacity: 4,
     grid: GRID,
     solid,
     floor,
+    terrain,
     bottom: -6,
     surface,
     surfaces: SURFACES,
@@ -216,7 +271,9 @@ function play(seed: number, sleepTogether: boolean): string | null {
       if (solid[tile(tx, ty)]) return `${at(s)}: its middle in the rock at ${x.toFixed(2)}, ${y.toFixed(2)}`;
       // down the cup it is below the floor round it, and the cup's pit holds it, not the floor
       const inCup = Math.hypot(x - CUP.x, y - CUP.y) < CUP.radius;
-      if (!inCup && floor[tile(tx, ty)] > z + 1e-3) return `${at(s)}: its middle in a raised wall`;
+      // its middle never under the ground, the floor's step and the terrain's rise, which is in a raised wall if the
+      // step is higher than where the ball is
+      if (!inCup && w.floorAt(x, y) > z + 1e-3) return `${at(s)}: its middle under the ground, or in a raised wall`;
       // near enough to have met a box or a post in the step: within half a unit and the step's travel of it
       const reach = -(0.5 + (before + 70 * STEP) * STEP);
       const near = { box: false, post: false };
@@ -233,6 +290,11 @@ function play(seed: number, sleepTogether: boolean): string | null {
       // the cup's rim, the circle of its edge at the floor
       const rim = Math.hypot(Math.hypot(x - CUP.x, y - CUP.y) - CUP.radius, z);
       if (rim < R - 0.1) return `${at(s)}: ${(R - rim).toFixed(3)} into the cup's rim`;
+      // the ground, where the ball is near it and not over the cup
+      if (Math.hypot(x - CUP.x, y - CUP.y) > CUP.radius + R && z - w.floorAt(x, y) < 3 * R) {
+        const into = intoGround(w, ball, floor);
+        if (into > 0.1) return `${at(s)}: ${into.toFixed(3)} into the ground`;
+      }
       const after = Math.hypot(w.vx[ball], w.vy[ball], w.vz[ball]);
       if (!near.box && !near.post && after > before + 70 * STEP + 1e-3)
         return `${at(s)}: sped up from ${before.toFixed(3)} to ${after.toFixed(3)} with nothing to speed it`;
@@ -261,7 +323,9 @@ function play(seed: number, sleepTogether: boolean): string | null {
 }
 
 describe('a round of golf played at random', () => {
-  // A round takes about six milliseconds, and a seed is two, so the time allowed grows with the seeds asked for.
+  // A round takes about sixty milliseconds alone, most of it looking at the ground under the ball every step, and a
+  // seed is two; the time allowed is four times that for each seed asked for, and never less than the thirty
+  // seconds every test has, so a busy machine is no failure.
   it(
     `keeps every rule over ${SEEDS.length} seeds of ${SHOTS} shots, each on its own window and judged together`,
     () => {
@@ -273,7 +337,7 @@ describe('a round of golf played at random', () => {
         }
       expect(broken.slice(0, 10), `${broken.length} of ${SEEDS.length * 2} rounds broke a rule`).toEqual([]);
     },
-    Math.max(5_000, SEEDS.length * 50),
+    Math.max(30_000, SEEDS.length * 500),
   );
 
   it('plays the same round twice from a seed', () => {

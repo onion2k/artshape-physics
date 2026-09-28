@@ -1272,7 +1272,8 @@ export class Discs {
    * `(fx, fy, fz)`, moving at `(vx, vy)`. The rim's points nearest the plane
    * are tried, on both faces, so flat on it has four and on edge has two.
    * `floor`, if given, says how high the plane stands under each point
-   * instead, for a floor of tiles. How many were found.
+   * instead, for a floor of tiles, or ground that leans as the plane does.
+   * How many were found.
    */
   plane(
     i: number,
@@ -1332,7 +1333,8 @@ export class Discs {
         // higher: a disc shoved down through its own floor by a pile above is still on that floor, and is put
         // back on it, where judged from its middle alone it would have no floor at all and fall for ever.
         if (under > Math.max(z[i], own) + r[i]) continue;
-        sink = under - pz;
+        // how far under the ground the point is, measured square to it, as the plane leaning with it is met
+        sink = (under - pz) * fz;
       } else sink = (qx - px) * fx + (qy - py) * fy + (qz - pz) * fz;
       if (sink <= -margin) continue;
       this.note(i, -1, px, py, pz, px + fx * sink, py + fy * sink, pz + fz * sink, -fx, -fy, -fz, vx, vy, 0);
