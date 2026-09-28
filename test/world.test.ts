@@ -445,6 +445,61 @@ describe('the world', () => {
     expect(w.asleep[i]).toBe(0);
   });
 
+  it('lets a carried body go to fall, and sleep on the floor, however long it was held, at any frame length', () => {
+    // Held, a body is not stepped, and its sleep window stayed where it had opened: held for more than a quarter of
+    // a second and let go, it was judged on the first steps on how little it had moved, and slept in the air.
+    for (const dt of [1 / 30, DT, 1 / 144])
+      for (const held of [0.1, 0.3, 0.5, 1, 4]) {
+        const at = `held ${held} s at frames of 1/${Math.round(1 / dt)}`;
+        const w = world({ holes: [] });
+        const i = w.spawn(0, 10, 10, 6);
+        w.carried[i] = 1;
+        for (let f = 0; f < held / dt; f++) w.step(dt, () => {});
+        expect(w.z[i], at).toBe(6);
+        w.carried[i] = 0;
+        for (let f = 0; f < 4 / dt && !w.asleep[i]; f++) w.step(dt, () => {});
+        expect(w.asleep[i], at).toBe(1);
+        expect(w.z[i], at).toBeCloseTo(RADII[0], 2);
+        expect([w.x[i], w.y[i]], at).toEqual([expect.closeTo(10, 5), expect.closeTo(10, 5)]);
+      }
+  });
+
+  it('lets a sleeper woken and taken up, lifted a little and held, go to lie on the floor again', () => {
+    const w = world({ holes: [] });
+    const i = w.spawn(0, 10, 10, RADII[0]);
+    for (let f = 0; f < 120; f++) w.step(DT, () => {});
+    expect(w.asleep[i]).toBe(1);
+    // a sleeper is not looked at, so one taken up is woken, or the world never knows it moved
+    w.wake(i);
+    w.carried[i] = 1;
+    for (let f = 1; f <= 60; f++) {
+      w.z[i] = RADII[0] + (0.18 * f) / 60;
+      w.step(DT, () => {});
+    }
+    w.carried[i] = 0;
+    for (let f = 0; f < 240 && !w.asleep[i]; f++) w.step(DT, () => {});
+    expect(w.asleep[i]).toBe(1);
+    expect(w.z[i]).toBeCloseTo(RADII[0], 2);
+    expect(problems(w)).toEqual([]);
+  });
+
+  it('lets a body held over a raised tile go to land on the tile, and one held over a hole go down it', () => {
+    const floor = new Float32Array(GRID.cols * GRID.rows);
+    for (let ty = 0; ty < GRID.rows; ty++) for (let tx = 0; tx < 15; tx++) floor[ty * GRID.cols + tx] = 4;
+    const w = world({ floor });
+    const overTier = w.spawn(0, -60, 10, 8),
+      overHole = w.spawn(1, HOLE.x, HOLE.y, 6);
+    w.carried[overTier] = w.carried[overHole] = 1;
+    for (let f = 0; f < 60; f++) w.step(DT, () => expect.fail('a carried body is not the world to report'));
+    w.carried[overTier] = w.carried[overHole] = 0;
+    const fell: { slot: number; hole: number }[] = [];
+    for (let f = 0; f < 240; f++) w.step(DT, (_kind, _x, _y, slot, hole) => fell.push({ slot, hole }));
+    expect(w.asleep[overTier]).toBe(1);
+    expect(w.z[overTier]).toBeCloseTo(4 + RADII[0], 2);
+    expect([w.x[overTier], w.y[overTier]]).toEqual([expect.closeTo(-60, 5), expect.closeTo(10, 5)]);
+    expect(fell).toEqual([{ slot: overHole, hole: 0 }]);
+  });
+
   it('says which hole took a body, even one gone below the bottom on the way down, and each only once', () => {
     // The first hole reaches far below the world's bottom and the second does not. What goes down the first is
     // gone once it passes the bottom, as anything is, and is still the hole's.

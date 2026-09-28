@@ -720,6 +720,19 @@ describe('a disc', () => {
     expect(toss(false)).toBeCloseTo(H / 2, 1);
   });
 
+  it('carried a second and let go, falls, and lies flat on the floor asleep, not where it was let go', () => {
+    const w = world();
+    const i = flat(w, 0, 0, 3);
+    w.carried[i] = 1;
+    run(w, 1);
+    expect(w.z[i]).toBe(3);
+    w.carried[i] = 0;
+    for (let f = 0; f < 240 && !w.asleep[i]; f++) w.step(DT, () => {});
+    expect(w.asleep[i]).toBe(1);
+    expect(w.z[i]).toBeCloseTo(H / 2, 1);
+    expect(tilt(w, i)).toBeLessThan(0.03);
+  });
+
   it('with sleepInAir off, lets a ball lying on a coin rest there and sleep', () => {
     const w = world({ tuning: { cell: 1.2, sleepInAir: false } });
     flat(w, 0, 0, H / 2);

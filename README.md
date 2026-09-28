@@ -194,7 +194,12 @@ Everything a body is — `x`, `y`, `z`, velocity, radius `r`, thickness `h`,
 orientation `q`, `kind`, `alive`, `asleep`, `carried` — is a typed array the
 caller reads directly for drawing, indexed by the slot `spawn` returned.
 `hit` adds to a body's speed and wakes it, which is a shot, or anything a
-game throws; a dead body or a carried one is left be. `loads` says how many bodies each owner's pushers were shoving on the last
+game throws; a dead body or a carried one is left be. A body the game
+holds, with `carried[i] = 1`, is not stepped: the game puts it where it
+likes, and let go, it falls from there and is judged for sleep on a window
+from when it was let go, so it never sleeps where it was let go in the air.
+A sleeper is not looked at at all, so one taken up is woken first, or the
+world never knows it moved. `loads` says how many bodies each owner's pushers were shoving on the last
 step. A disc is put down as it should lie with `setOrientation`, `axis` says
 which way its face looks, and `deepest` says how far any two bodies are into
 each other, or any two at rest, for a test or a game's own rules.
@@ -212,7 +217,8 @@ world has as many holes as it is given; the sleep bookkeeping stays straight
 while pushers churn a heap; nothing is shoved into or through the rock; a
 belt carries and a magnet pulls; a body rests on the tile under it, falls
 from a high tile to a low one, is stopped by a step from below, and is
-reported when it falls out of the bottom; one on a box's top lies flat and
+reported when it falls out of the bottom; a carried body let go falls and
+sleeps where it lands, however long it was held; one on a box's top lies flat and
 is carried; a ball bounces off a wall, the floor and another by their
 figures times its kind's bounce, and a coin never does; chance from a seed
 gives the same world twice.

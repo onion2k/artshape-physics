@@ -400,7 +400,7 @@ export class World {
   /** The step each body's window opened on. A body is judged on a whole window of its own, never on the tail of everyone's: one that appeared a step before a shared tick had moved nowhere yet, and slept where it appeared, in the air. */
   private readonly opened: Int32Array;
   private steps = 0;
-  /** Held by a drone: not stepped, still drawn where the drone puts it. */
+  /** Held by a drone: not stepped, still drawn where the drone puts it, and let go, judged for sleep from then. */
   readonly carried: Uint8Array;
   private readonly onFloor: Uint8Array;
   /** How many pieces each ball's step is in, this step: 1 for any not cut, and for any not moved by the step at all. */
@@ -746,7 +746,13 @@ export class World {
     // integrate
     for (let k = 0, n = this.awakeCount; k < n; k++) {
       const i = awake[k];
-      if (carried[i]) continue;
+      // A body held is not stepped, and its window is opened afresh where it is held, so let go it is judged on a
+      // window of its own from then: left where it opened, one held a quarter of a second or more had moved nowhere
+      // in that window by the first steps after, and slept where it was let go, in the air.
+      if (carried[i]) {
+        this.window(i);
+        continue;
+      }
       this.lastX[i] = x[i];
       this.lastY[i] = y[i];
       if (this.h[i] > 0) {

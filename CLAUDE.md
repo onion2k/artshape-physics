@@ -159,7 +159,9 @@ applies:
   sleep window, running round a rim or between two things, is held awake by
   `sleepSpeed`, and needs a test that it is.
 - **Carried:** a body with `carried[i]` set is not stepped, and nothing new
-  moves it or reports it.
+  moves it or reports it. Its sleep window is opened afresh each step it is
+  held, so let go it is judged from then, and falls before it can sleep. A
+  sleeper taken up is not seen by the world until something wakes it.
 - **Discs as well as spheres:** every path has a disc branch, or says why it
   does not need one. Discs are solved by position and never bounce.
 - **Rock:** against a face, banking along a wall of several tiles (with and
