@@ -163,7 +163,10 @@ applies:
   held, so let go it is judged from then, and falls before it can sleep. A
   sleeper taken up is not seen by the world until something wakes it.
 - **Discs as well as spheres:** every path has a disc branch, or says why it
-  does not need one. Discs are solved by position and never bounce.
+  does not need one. Discs are solved by position and never bounce. With
+  `squeezedStill` a disc is never read back going faster than it went in a
+  step, nor spinning faster than it turned, on any path that pushes it; a
+  new one joins the scene in `test/squeeze.test.ts` that holds it to that.
 - **Rock:** against a face, banking along a wall of several tiles (with and
   without `smoothWalls`), at a corner that stands out, into the inside of a
   corner, and shoved in by a box; never left in it.

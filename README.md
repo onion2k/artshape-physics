@@ -33,7 +33,13 @@ tiles, and what falls into a hole is reported through a callback.
   frame with three hundred awake, and 3.2 with four hundred, and 1.24 on
   average while the pusher is in it. Drawn at its own radius, thickness and orientation,
   a disc at rest is never more than a twentieth of a unit into another.
-  `src/disc.ts` says how, and what each part of it is there to stop.
+  `src/disc.ts` says how, and what each part of it is there to stop. Left
+  alone, a heap can keep a pair of coins awake for good: squeezed a
+  twentieth into each other by the coins lying on them, too far in to
+  sleep, read back going at a unit a second while going nowhere, and waking
+  what lies on them. Of two hundred heaps of three hundred coins, 14 to 23
+  were left so. With `squeezedStill` a coin is read back going only as far
+  as it went, and 6 are, and a heap settles with a quarter fewer awake.
 - **Bodies sleep.** Only an awake body looks for its neighbours, and it wakes
   what it touches. Sleepers keep their place in a hash of their own from one
   step to the next, so a heap at rest costs nothing, and the pushers and belts
@@ -152,7 +158,8 @@ tiles, and what falls into a hole is reported through a callback.
 - **Chance** comes from a function the caller hands in, and the **tuning** —
   gravity, friction, restitution, drag, the settling of what is slow, the
   sleep window, whether a body may sleep in the air, the fastest it may be
-  going to sleep, the hash cell — is a record with a coin-sized world as its
+  going to sleep, whether a squeezed coin is read back going only where it
+  went, the hash cell — is a record with a coin-sized world as its
   defaults. Sleep goes by how far a body has got over a window of steps, and
   one bouncing, or running round the inside of a cup's rim, can be back
   where it was by the window's end; with `sleepInAir` off, a body sleeps

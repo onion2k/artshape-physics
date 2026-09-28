@@ -57,6 +57,8 @@ export interface DiscState {
   /** How two bodies hold against sliding on each other, and how the floor and a box's top hold a disc. */
   friction: number;
   grip: number;
+  /** Whether what a disc was pushed beyond stopping comes off its speed and spin only as far as it went and turned that way. */
+  squeezedStill: boolean;
 }
 
 /** How many points round a rim are tried against another disc that is not lying in its plane. */
@@ -126,6 +128,17 @@ const MAX_LINKS = 60;
 const ADVANCING = 0.05;
 /** The step a sleeping disc is said to have last lain on something: every step, for as long as it sleeps. */
 const ASLEEP = 0x3fffffff;
+
+/**
+ * How much of `(ox, oy, oz)` a move `(gx, gy, gz)` went the way of, as a
+ * share from none to all of it: the most of what was pushed beyond stopping
+ * that can come off the move and leave it going no faster than it went.
+ */
+function wentAlong(gx: number, gy: number, gz: number, ox: number, oy: number, oz: number): number {
+  const o2 = ox * ox + oy * oy + oz * oz;
+  if (o2 === 0) return 0;
+  return Math.max(0, Math.min(1, (gx * ox + gy * oy + gz * oz) / o2));
+}
 
 export class Discs {
   /** Where each disc was, and how it was turned, when this step began. */
@@ -498,9 +511,24 @@ export class Discs {
     const { x, y, z, vx, vy, vz, wx, wy, wz, q, step } = this.s;
     const o = i * 4;
     // how far it got, less what it was pushed beyond stopping: put apart is not sent apart
-    vx[i] = (x[i] - this.px[i] - this.overX[i]) / step;
-    vy[i] = (y[i] - this.py[i] - this.overY[i]) / step;
-    vz[i] = (z[i] - this.pz[i] - this.overZ[i]) / step;
+    const gx = x[i] - this.px[i],
+      gy = y[i] - this.py[i],
+      gz = z[i] - this.pz[i];
+    let ox = this.overX[i],
+      oy = this.overY[i],
+      oz = this.overZ[i];
+    // Squeezed, it is put out of one thing and pushed back into another, more of one push than the other counted as
+    // beyond stopping, and it gets nowhere: all of it taken off, it would be read back going the other way, into what
+    // it was put out of, and go there next step. So only as much comes off as it went that way.
+    if (this.s.squeezedStill) {
+      const k = wentAlong(gx, gy, gz, ox, oy, oz);
+      ox *= k;
+      oy *= k;
+      oz *= k;
+    }
+    vx[i] = (gx - ox) / step;
+    vy[i] = (gy - oy) / step;
+    vz[i] = (gz - oz) / step;
     // Landed flat on the world, it is going into it no longer. How far it got this step includes its fall to the
     // floor, and read back as its speed that fall is made again the next step: a coin dropped a tier's height
     // landed, and the step after was a fifth of a unit under the floor, its middle below it, where the rock took
@@ -541,10 +569,19 @@ export class Discs {
       dy = -dy;
       dz = -dz;
     }
-    // how far it turned, less what it was turned beyond stopping
-    let sx = (2 * dx - this.overA[i]) / step,
-      sy = (2 * dy - this.overB[i]) / step,
-      sz = (2 * dz - this.overC[i]) / step;
+    // how far it turned, less what it was turned beyond stopping, and squeezed, only as far as it turned that way
+    let oa = this.overA[i],
+      ob = this.overB[i],
+      oc = this.overC[i];
+    if (this.s.squeezedStill) {
+      const k = wentAlong(2 * dx, 2 * dy, 2 * dz, oa, ob, oc);
+      oa *= k;
+      ob *= k;
+      oc *= k;
+    }
+    let sx = (2 * dx - oa) / step,
+      sy = (2 * dy - ob) / step,
+      sz = (2 * dz - oc) / step;
     // and spinning no faster than it was, or than its speed or what struck it would roll it
     const spin = Math.sqrt(sx * sx + sy * sy + sz * sz),
       mostSpin = Math.min(MAX_SPIN, Math.max(this.spun[i], (2 * most) / this.s.r[i]));

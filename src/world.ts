@@ -152,6 +152,22 @@ export interface Tuning {
    */
   sleepSpeed: number;
   /**
+   * Whether a disc squeezed between others is read back going only where it
+   * went. A disc's speed at the end of a step is how far it got, less what
+   * it was pushed beyond stopping, so being put out of something is not
+   * being thrown by it. In a heap a coin is put out of the coin under it and
+   * pushed back in by the coins lying on it, more of one push than the other
+   * counted as beyond stopping: it gets nowhere, and is read back going at a
+   * unit a second into the coin under it, and spinning. Two coins so
+   * squeezed stay a twentieth of a unit into each other, too far in to
+   * sleep, and wake what lies on them for good. With this, what was beyond
+   * stopping comes off a disc's speed only as far as the disc went that way,
+   * and off its spin only as far as it turned, so it is never read back
+   * going faster than it went, nor spinning faster than it turned. False,
+   * the default, is how it always was. A disc only: a ball's speed is its own.
+   */
+  squeezedStill: boolean;
+  /**
    * Whether a ball banks off a wall of tiles as off one flat wall. A wall is
    * made of tiles, and a ball meeting the face of one, near where the next
    * one along begins, meets that one's corner too, flush with the face: it is
@@ -232,6 +248,7 @@ export const DEFAULT_TUNING: Tuning = {
   settleBelow: 1.5,
   sleepInAir: true,
   sleepSpeed: Infinity,
+  squeezedStill: false,
   smoothWalls: false,
   travel: Infinity,
 };
@@ -540,6 +557,7 @@ export class World {
             gravity: this.tune.gravity,
             friction: this.tune.friction,
             grip: this.tune.grip,
+            squeezedStill: this.tune.squeezedStill,
           },
           n,
         )
