@@ -152,7 +152,8 @@ function sweeper(cx: number, cy: number, radius: number, t: number, prev: Pusher
   };
 }
 
-function heap(seed: number) {
+/** The heap poured, not yet settled. */
+function poured(seed: number): World {
   const random = seeded(seed);
   const world = new World({
     capacity: HEAP.count,
@@ -167,6 +168,11 @@ function heap(seed: number) {
       a = random() * Math.PI * 2;
     world.spawn(k % 50 === 0 ? 1 : 0, HEAP.x + Math.cos(a) * r, HEAP.y + Math.sin(a) * r, 1 + random() * 6);
   }
+  return world;
+}
+
+function heap(seed: number) {
+  const world = poured(seed);
   for (let f = 0; f < 180; f++) world.step(DT, nothing);
   let pushers: Pusher[] = [];
   const frame = (f: number) => {
