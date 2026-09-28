@@ -1,5 +1,5 @@
 /**
- * The world as v0.3.0 left it, held bit for bit.
+ * The world as v0.3.0 left it, held bit for bit, and terrain as v0.6.0 left it.
  *
  * Every game that pins this package is to behave exactly as it did until it
  * opts in to something new, and a test of what a thing does only holds it
@@ -15,7 +15,10 @@
  * before anything changed, and the sixth later, from a copy of it, when it
  * was found that no scene drove a coin into the rock. Each path a later change is to
  * touch was checked by changing it by a part in ten million and seeing a
- * scene fail.
+ * scene fail. A seventh, of balls and coins on terrain round a cup on level
+ * ground, was hashed by v0.6.0's own source, the first with terrain, before
+ * the cup's rim was let lean with the ground: a game on terrain with its cups
+ * on level ground is held to v0.6.0 as a game with none is to v0.3.0.
  *
  * A hash that moves is a change in behaviour, whatever the change meant to
  * do. It is written again only for a change meant to move it, or for a
@@ -26,7 +29,7 @@
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { World, type Grid, type Pusher } from '../src/world';
+import { World, type Grid, type Pusher, type Surface } from '../src/world';
 
 const RECORD = new URL('./unchanged.json', import.meta.url);
 const UPDATE = process.env.UNCHANGED_UPDATE === '1';
@@ -439,6 +442,89 @@ const SCENES: Scene[] = [
           const p = slider(x, 0, prev, { z: 0.5, hx: 0.3, hy: 6, hz: 0.5 });
           world.pushers = [p];
           world.wakeNear(x + 1.5, 0, 8);
+          prev = p;
+          return DT;
+        },
+      };
+    },
+  },
+  {
+    // Terrain as v0.6.0 stepped it: balls struck about hills and a hollow, up a slope with a step on it, at a cup with
+    // a rim and a hole with none, each on level ground, past a post on a slope, over sand and against a box; and
+    // coins dropped on a slope and at the step's lip. Half the balls are struck at the cup, so its rim is met.
+    name: 'balls and coins on terrain, round a cup and a hole on level ground',
+    build() {
+      const grid: Grid = { cols: 40, rows: 30, originX: -60, originY: -45, tile: 3 };
+      const cup = { x: 30, y: 0, radius: 1.45, depth: 6, rim: 0.3, pull: 0 };
+      const pit = { x: -40, y: -30, radius: 2, depth: 8 };
+      // level for four tiles round each hole, so v0.6.0 takes it
+      const near = (tx: number, ty: number, h: { x: number; y: number }) =>
+        Math.max(Math.abs(tx - (h.x - grid.originX) / 3 + 0.5), Math.abs(ty - (h.y - grid.originY) / 3 + 0.5)) <= 4;
+      const terrain = heights(grid, (tx, ty) => {
+        if (near(tx, ty, cup) || near(tx, ty, pit)) return 0;
+        const mound = 3 * Math.max(0, 1 - Math.hypot(tx - 10, ty - 16) / 3.5),
+          hollow = -2.5 * Math.max(0, 1 - Math.hypot(tx - 20, ty - 7) / 3),
+          slope = 0.9 * Math.max(0, ty - 20);
+        return mound + hollow + slope;
+      });
+      const floor = heights(grid, (tx, ty) => (tx >= 26 && tx <= 27 && ty >= 22 && ty <= 26 ? 2 : 0));
+      const surface = Uint8Array.from({ length: grid.cols * grid.rows }, (_, t) =>
+        t % grid.cols >= 14 && t % grid.cols <= 16 && Math.floor(t / grid.cols) >= 10 && Math.floor(t / grid.cols) <= 12
+          ? 1
+          : 0,
+      );
+      const surfaces: Surface[] = [
+        { drag: 0, roll: 16 },
+        { drag: 8, roll: 60 },
+      ];
+      const random = seeded(13);
+      const world = new World({
+        capacity: 40,
+        grid,
+        solid: border(grid),
+        floor,
+        terrain,
+        surface,
+        surfaces,
+        radii: [1, 0.42],
+        thickness: [0, 0.24],
+        holes: [cup, pit],
+        random,
+        tuning: {
+          sleepInAir: false,
+          sleepSpeed: 2,
+          travel: 0.5,
+          smoothWalls: true,
+          restitution: 0.3,
+          bounceFrom: 2,
+          wallRestitution: 0.8,
+        },
+      });
+      world.bumpers = [{ x: 0, y: 27, radius: 1, top: world.floorAt(0, 27) + 1.6, restitution: 1.3 }];
+      for (let k = 0; k < 16; k++) {
+        const x = -50 + random() * 100,
+          y = -35 + random() * 70;
+        world.spawn(0, x, y, world.floorAt(x, y) + 1.2);
+      }
+      for (let k = 0; k < 12; k++) {
+        const x = k < 6 ? -10 + random() * 6 : 23.4 + random() * 1.2,
+          y = k < 6 ? 20 + random() * 10 : 24 + random() * 6;
+        world.spawn(1, x, y, world.floorAt(x, y) + 0.5 + random());
+      }
+      let prev: Pusher | null = null;
+      return {
+        world,
+        frame(f) {
+          if (f % 90 === 0)
+            for (let i = 0; i < 16; i++) {
+              if (!world.alive[i] || world.kind[i] !== 0) continue;
+              const speed = 5 + random() * 70;
+              let a = random() * 2 * Math.PI;
+              if (i % 2 === 0) a = Math.atan2(cup.y - world.y[i], cup.x - world.x[i]) + (random() - 0.5) * 0.2;
+              world.hit(i, speed * Math.cos(a), speed * Math.sin(a), 0);
+            }
+          const p = slider(-30 + 10 * Math.sin(f * DT), -40, prev, { hx: 0.4, hy: 3 });
+          world.pushers = [p];
           prev = p;
           return DT;
         },

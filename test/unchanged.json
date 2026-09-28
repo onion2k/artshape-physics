@@ -100,5 +100,22 @@
       "live": 55,
       "awake": 13
     }
+  },
+  "balls and coins on terrain, round a cup and a hole on level ground": {
+    "60": {
+      "hash": "aa1e2cfd",
+      "live": 28,
+      "awake": 17
+    },
+    "300": {
+      "hash": "344deaec",
+      "live": 27,
+      "awake": 15
+    },
+    "600": {
+      "hash": "c8f62fcc",
+      "live": 26,
+      "awake": 9
+    }
   }
 }
