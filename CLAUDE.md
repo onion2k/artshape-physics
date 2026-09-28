@@ -30,7 +30,7 @@ needed slopes.
 
     npm run check          the full check: check:quick, then the bench (~16 s)
     npm run check:quick    formatting, types, lint, and the tests (~7 s)
-    npm test               the tests alone (Vitest, test/), the unchanged gate among them
+    npm test               the tests alone (Vitest, test/), the unchanged gate and the golf fuzzer among them
     npm run test:watch     the tests, again on each save
     npm run bench          a frame's cost in four scenes, held to scripts/bench-baseline.json and a budget (~8.5 s)
     npm run typecheck      tsc, no emit
@@ -50,6 +50,15 @@ The gates, one by one:
   `switch-exhaustiveness-check` and `no-unnecessary-condition`. It is for
   mistakes, not style.
 - **Tests:** `vitest run`. Every behaviour the README claims has a test.
+- **Fuzzer:** `test/golf.fuzz.test.ts`, among the tests. A round of golf
+  played at random from 24 seeds on a course with everything ooergolf asks
+  for, and after every step: the ball's middle never in a wall, never more
+  than a tenth into a box or a post, never sped up but by gravity or a
+  bumper or a moving box, reported at most once, and every shot ended
+  within 30 s. `FUZZ_SEEDS=1-500 npx vitest run test/golf.fuzz.test.ts` for
+  more; a failure names its seed, shot and step. A course is not to drive a
+  box against a wall with less than a ball's width between: the ball is in
+  one or the other, and the rock, looked at last, wins.
 - **Unchanged:** `test/unchanged.test.ts`, among the tests. Six scenes run
   from seeds with no new option set, every body's state hashed at frames
   60, 300 and 600, and held bit for bit to `test/unchanged.json`, written at
@@ -180,14 +189,15 @@ applies:
 
 ## Gates and baselines
 
-| Gate      | Holds the package to                    | Baseline and tolerance                                         |
-| --------- | --------------------------------------- | -------------------------------------------------------------- |
-| Format    | prettier's formatting                   | none: pass or fail                                             |
-| Types     | strict TypeScript                       | none: pass or fail                                             |
-| Lint      | the type-aware rules                    | none: pass or fail                                             |
-| Tests     | every behaviour the README claims       | 30 tests at v0.3.0                                             |
-| Unchanged | every game's world as v0.3.0 stepped it | `test/unchanged.json`, bit for bit                             |
-| Bench     | what a frame costs, in four scenes      | `scripts/bench-baseline.json`, ±20% both ways, 0.0002 ms slack |
+| Gate      | Holds the package to                          | Baseline and tolerance                                         |
+| --------- | --------------------------------------------- | -------------------------------------------------------------- |
+| Format    | prettier's formatting                         | none: pass or fail                                             |
+| Types     | strict TypeScript                             | none: pass or fail                                             |
+| Lint      | the type-aware rules                          | none: pass or fail                                             |
+| Tests     | every behaviour the README claims             | 30 tests at v0.3.0                                             |
+| Unchanged | every game's world as v0.3.0 stepped it       | `test/unchanged.json`, bit for bit                             |
+| Fuzzer    | the rules a golf ball keeps, struck at random | 24 seeds of 12 shots, every rule on every step                 |
+| Bench     | what a frame costs, in four scenes            | `scripts/bench-baseline.json`, ±20% both ways, 0.0002 ms slack |
 
 The bench's budgets, in milliseconds a frame on the fastest run, and its
 baselines as written (on an M4 Pro, Node 23.4.0):
@@ -197,7 +207,7 @@ baselines as written (on an M4 Pro, Node 23.4.0):
 | a heap of 2000 balls churned by two pushers          | pushminer             | 3      | 1.87     |
 | a bed of 1500 discs, timed while the pusher is in it | coinpush              | 4      | 1.24     |
 | one ball shot round a golf course                    | ooergolf              | 0.1    | 0.0018   |
-| 64 balls on that course at 120 u/s                   | ooergolf, at capacity | 1      | 0.035    |
+| 64 balls on that course at 120 u/s                   | ooergolf, at capacity | 1      | 0.040    |
 
 The tolerance is the measured wobble with room to spare: over three runs
 no scene moved by more than 7%. The golf scenes grow as the golf features

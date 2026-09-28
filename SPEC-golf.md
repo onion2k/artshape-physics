@@ -690,6 +690,23 @@ and a coin pile's test, so it is for balls, and opted into; ooergolf sets it.
 
 ### 10. A fast ball kept out of walls
 
+As built, four things to know. The floor's drag, roll and slope to a hole
+act on the last look of a step if the ball met the floor at any look of it:
+a fast ball's first piece meets the floor and is bounced a hair off it for
+the rest, and held to meeting it on the last look, a ball in pieces was not
+dragged at all, 10 units where one look went 8.5. A box's carry is shared
+among the pieces, and its load counted once, so a fast ball is carried and
+counted as a slow one is. The tests found the corners between the tiles of
+a wall throwing a ball along it, which smoothWalls (9b) answers, and the
+angled cases are held with it on. And the fuzzer, 500 seeds of 12 shots,
+keeps every rule; what it found were its own mistakes, and one thing of
+every box and wall: a box driven against a wall with a ball between has it
+in one or the other, and the rock wins, so a course is not laid out so. A
+piece backed out to where its step began rather than where it began is not
+told apart by any test, since the pieces keep a ball's middle out of the
+rock and nothing else reaches that path; it backs out to where the piece
+began, as is right.
+
 This is two commits.
 
 **Refactor first.** The per-body sphere pass (pushers, bumpers, belt,

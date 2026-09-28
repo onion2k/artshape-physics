@@ -45,6 +45,19 @@ tiles, and what falls into a hole is reported through a callback.
   ball touching it is brought each step: how a blade carries its load, and
   how a ball glancing off a still box is slowed along it. A box that bounces
   carries along its face only.
+- **A fast ball** is moved a step at a time and then looked at, and one
+  that goes further in a step than its radius could end it in the rock, and
+  be put back and stopped dead, or past a thin wall altogether. Given a
+  `travel`, a ball that would go further than that share of its radius in a
+  step goes in pieces, each looked at: at half its radius, a ball of radius
+  1 at 120 u/s is in two, and at 240 in four. It bounces off the rock by the
+  same figure at every speed and every phase of a step, and never passes
+  through rock a tile thick, a blade half a unit thick or a thin post, up to
+  240 u/s. What happens once a step, the floor's drag, a belt, a box's carry
+  and its load, happens once a step however many pieces there are. A box is
+  put where it is once a step and is not pieced, so it must move less in a
+  step than its half thickness and a ball's radius: 150 u/s for a blade half
+  a unit thick against a ball of radius 1.
 - **Bumpers** are round posts that never move, each standing from below
   everything up to its top, flat there. A ball meets the side, the top or
   the round edge between, whichever is nearest, and is bounced off the side

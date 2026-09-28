@@ -134,6 +134,18 @@ export interface Tuning {
    * was; a disc, put out of the rock by position, meets the corners either way.
    */
   smoothWalls: boolean;
+  /**
+   * The furthest a ball goes between looks at what it meets, as a share of
+   * its radius. A ball is moved a step at a time and then looked at, and one
+   * that goes further in a step than its radius can end it with its middle
+   * in the rock, and be put back and stopped dead, or past a thin wall
+   * altogether: at 120 u/s a ball of radius 1 was stopped dead by rock in one
+   * phase of a step in three, and from 150 went through a blade half a unit
+   * thick. Given a travel, a ball that would go further goes in pieces, each
+   * no longer than that, and is looked at after each. Infinity, the default,
+   * is one look a step, as it always was. A disc goes as it did.
+   */
+  travel: number;
 }
 
 /**
@@ -149,6 +161,10 @@ export interface Tuning {
  * first pass is still seen in the second, by whichever of them was deep.
  */
 const DISC_PASSES = 2;
+/** The most pieces a ball's step is cut into, however fast it goes: past it the pieces grow, and the guarantee ends. */
+const MOST_PIECES = 64;
+/** A ball's mark, beside the floor's 1, a box top's 2 and BORNE's 4, for having met the floor at a look of this step. */
+const FLOORED = 8;
 const AGAIN = 0.02;
 /** How far under the floor a disc may still be, once put out of it, before it is put out of it again. */
 const LANDED = 0.02;
@@ -189,6 +205,7 @@ export const DEFAULT_TUNING: Tuning = {
   settleBelow: 1.5,
   sleepInAir: true,
   smoothWalls: false,
+  travel: Infinity,
 };
 
 export interface WorldOptions {
@@ -358,6 +375,8 @@ export class World {
   /** Held by a drone: not stepped, still drawn where the drone puts it. */
   readonly carried: Uint8Array;
   private readonly onFloor: Uint8Array;
+  /** How many pieces each ball's step is in, this step: 1 for any not cut, and for any not moved by the step at all. */
+  private readonly pieces: Uint8Array;
   private readonly free: number[] = [];
 
   pushers: Pusher[] = [];
@@ -467,6 +486,7 @@ export class World {
     this.sz = new Float32Array(n);
     this.carried = new Uint8Array(n);
     this.onFloor = new Uint8Array(n);
+    this.pieces = new Uint8Array(n).fill(1);
     this.h = new Float32Array(n);
     this.so = new Float32Array(n * 4);
     this.opened = new Int32Array(n);
@@ -708,9 +728,13 @@ export class World {
         continue;
       }
       vz[i] -= this.tune.gravity * this.tune.step;
-      x[i] += vx[i] * this.tune.step;
-      y[i] += vy[i] * this.tune.step;
-      z[i] += vz[i] * this.tune.step;
+      // the first piece of it; a ball not cut goes the whole step
+      const n = this.piecesFor(i);
+      this.pieces[i] = n;
+      const dt = this.tune.step / n;
+      x[i] += vx[i] * dt;
+      y[i] += vy[i] * dt;
+      z[i] += vz[i] * dt;
       this.onFloor[i] = 0;
     }
     this.hash();
@@ -741,7 +765,21 @@ export class World {
         this.stepDisc(i, collect);
         continue;
       }
-      this.contacts(i, collect, true);
+      const n = this.pieces[i];
+      // what it met of the floor is this step's, not what it met when it was last awake
+      this.onFloor[i] &= ~FLOORED;
+      this.contacts(i, collect, n === 1);
+      // the rest of a fast ball's step, a piece at a time, each from where the last left it, and looked at after
+      for (let k = 1; k < n && alive[i]; k++) {
+        this.lastX[i] = x[i];
+        this.lastY[i] = y[i];
+        const dt = this.tune.step / n;
+        x[i] += vx[i] * dt;
+        y[i] += vy[i] * dt;
+        z[i] += vz[i] * dt;
+        this.contacts(i, collect, k === n - 1);
+      }
+      this.pieces[i] = 1;
       if (!alive[i]) continue;
       // A slow body is slowed further, which takes the fizz out of a
       // settling heap. Sleep is judged on where it has got to, not how fast
@@ -1635,11 +1673,12 @@ export class World {
   }
 
   /** The blade and the hull: oriented boxes that shove. */
-  private push(i: number) {
-    for (const o of this.placed) this.pushOne(i, o);
+  private push(i: number, last: boolean) {
+    for (const o of this.placed) this.pushOne(i, o, last);
   }
 
-  private pushOne(i: number, o: Placed) {
+  /** A box against a ball. `last` is whether this is the last look of the ball's step, when its load is counted. */
+  private pushOne(i: number, o: Placed, last = true) {
     const { x, y, z, vx, vy, vz, r } = this;
     const { p, bx, by, pivotX, pivotY, c, s } = o;
     const dx = x[i] - bx,
@@ -1728,7 +1767,10 @@ export class World {
       vz[i] += wnz * j;
     }
     // dragged along with the face a little, which is how a blade carries a load, and a platform what rests on it
-    const carry = p.carry ?? 0.15;
+    // a step's carry, shared among the pieces a fast ball's step is cut into, so it is carried as far at any speed
+    const whole = p.carry ?? 0.15,
+      n = this.pieces[i];
+    const carry = n === 1 ? whole : 1 - Math.pow(1 - whole, 1 / n);
     if (bounces) {
       // along the face only: across it, the bounce has said how fast the ball leaves
       const tx = pvx - vx[i],
@@ -1740,7 +1782,9 @@ export class World {
       vx[i] += (pvx - vx[i]) * carry;
       vy[i] += (pvy - vy[i]) * carry;
     }
-    if (Math.abs(wnz) < 0.5) this.loadNow[p.owner] = (this.loadNow[p.owner] ?? 0) + 1;
+    if (Math.abs(wnz) < 0.5) {
+      if (last) this.loadNow[p.owner] = (this.loadNow[p.owner] ?? 0) + 1;
+    }
     // on top of the box is a floor: it lies flat there
     else if (wnz > 0.5) this.onFloor[i] |= 2;
     if (wnz > 0) this.onFloor[i] |= BORNE;
@@ -1780,6 +1824,14 @@ export class World {
     vy[i] += b.dx * -across * 0.6 * k;
   }
 
+  /** How many pieces a ball's step is to be cut into, by how far it would go in it and the travel it is allowed. */
+  private piecesFor(i: number): number {
+    const travel = this.tune.travel;
+    if (travel === Infinity) return 1;
+    const far = Math.hypot(this.vx[i], this.vy[i], this.vz[i]) * this.tune.step;
+    return Math.min(MOST_PIECES, Math.max(1, Math.ceil(far / (travel * this.r[i]))));
+  }
+
   /**
    * What a ball meets where it has got to: the boxes, the posts, the rock and
    * the floor, and the holes and the bottom it may leave the world by. The
@@ -1789,7 +1841,7 @@ export class World {
    * toward a hole, once a step, whatever looks it takes.
    */
   private contacts(i: number, collect: Collect, last: boolean) {
-    this.push(i);
+    this.push(i, last);
     // most worlds have no posts, and a heap of their balls is not made to ask of each one
     if (this.bumpers.length) this.bump(i);
     if (last) {
@@ -1853,8 +1905,11 @@ export class World {
       z[i] = fz + r[i];
       if (vz[i] < -this.tune.bounceFrom) vz[i] = -vz[i] * this.tune.restitution * this.kindBounce[this.kind[i]];
       else if (vz[i] < 0) vz[i] = 0;
-      this.onFloor[i] |= 1 | BORNE;
-      if (!last) return;
+      this.onFloor[i] |= 1 | BORNE | FLOORED;
+    }
+    // Once a step, on its last look, if it met the floor at any look of the step: a fast ball's step is in pieces,
+    // and the floor it met in the first bounces it a hair off it for the rest, so the last may not touch it.
+    if (last && this.onFloor[i] & FLOORED) {
       // the surface of the tile under its middle, the kind scaling it
       const under = this.surfaces.length
           ? this.surfaceOf(

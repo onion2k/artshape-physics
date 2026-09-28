@@ -321,7 +321,8 @@ function machine(seed: number) {
 const COURSE = {
   grid: { cols: 24, rows: 24, originX: -36, originY: -36, tile: 3 } satisfies Grid,
   radii: [1],
-  tuning: { floorDrag: 0.8 },
+  // the roll the game has chosen, fast balls in pieces, and walls banked off as one flat wall, as the game has them
+  tuning: { floorDrag: 0.8, travel: 0.5, smoothWalls: true },
   /** The green, at the drag the game has chosen, and sand ten times as heavy. */
   surfaces: [{ drag: 0.8 }, { drag: 8 }] satisfies Surface[],
   /** A bunker three tiles by three, across the way straight up from the tee. */
@@ -436,9 +437,9 @@ function course(seed: number) {
 /**
  * One ball shot round the course: at each speed in turn, in each direction,
  * each shot taken from where the last came to rest, as a round is played.
- * The twelve take 2440 frames with the bumpers and the bunker on the course
- * (2240 before either), so the timing, at 2700, runs a little way into the
- * first again.
+ * The twelve take 2420 frames with the bumpers, the bunker, the pieces and
+ * the smooth walls on the course (2240 before any of them), so the timing,
+ * at 2700, runs a little way into the first again.
  */
 function round(seed: number) {
   const { world, step } = course(seed);
