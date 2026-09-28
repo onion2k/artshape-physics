@@ -812,12 +812,12 @@ export class World {
     }
     this.hash();
     if (this.discs) this.again.fill(0, 0, this.count);
-    this.pairs(false);
+    this.pairs();
     // the discs found well into something are gone over again, put back on the floor first
     for (let pass = 1; pass < DISC_PASSES; pass++)
       if (this.discs) {
         this.floors();
-        this.pairs(true);
+        this.discsAgain();
       }
     this.place();
     this.sleepers();
@@ -1018,12 +1018,24 @@ export class World {
     }
   }
 
-  private pairs(discsOnly: boolean) {
-    const { x, y, z, vx, vy, vz, r, alive, asleep, carried, head, next, gx, awake } = this;
+  /**
+   * Every awake body against the bodies near it, found through the hash: a
+   * pair with a disc in it goes to the discs, and two balls near enough to
+   * touch go to `touch`. Most of what is looked at here is not touching, so
+   * whatever is done for every body looked at is done dozens of times a body.
+   * Whether there are discs at all is asked once a step, and whether the
+   * outer body is one once a body: asked of every pair, it read one more
+   * array for every body looked at, and a world with no discs paid a
+   * twelfth of the frame of a heap falling for it.
+   */
+  private pairs() {
+    const { x, y, z, r, h, alive, asleep, carried, head, next, gx, awake } = this;
+    const discs = this.discs !== null;
     // a sleeper woken here goes on the end of the list and waits for the next step to be the outer body
     for (let k = 0, n = this.awakeCount; k < n; k++) {
       const i = awake[k];
       if (!alive[i] || asleep[i] || carried[i]) continue;
+      const disc = discs && h[i] > 0;
       const c = this.cellOf(x[i], y[i]);
       const cx = c % gx,
         cy = (c / gx) | 0;
@@ -1039,102 +1051,146 @@ export class World {
             // never the outer body, so it is done from the awake one
             if (j === i || (!asleep[j] && j < i)) continue;
             // a disc, or a ball against one, is the discs' business
-            if (this.h[i] > 0 || this.h[j] > 0) {
-              if (!discsOnly || this.again[i] || this.again[j]) this.discPair(i, j);
+            if (discs && (disc || h[j] > 0)) {
+              this.discPair(i, j);
               continue;
             }
-            if (discsOnly) continue;
             const dx = x[j] - x[i],
               dy = y[j] - y[i],
               dz = z[j] - z[i];
             const rr = r[i] + r[j];
             const d2 = dx * dx + dy * dy + dz * dz;
             if (d2 >= rr * rr || d2 < 1e-8) continue;
-            const d = Math.sqrt(d2);
-            const nxx = dx / d,
-              nyy = dy / d,
-              nzz = dz / d;
-            const pen = rr - d;
-            const rvx = vx[j] - vx[i],
-              rvy = vy[j] - vy[i],
-              rvz = vz[j] - vz[i];
-            const vn = rvx * nxx + rvy * nyy + rvz * nzz;
-            // a sleeper is woken only by something arriving with intent
-            if (asleep[j]) {
-              if (vn < -1.2 || pen > 0.3) this.wake(j);
-              else {
-                // i rests against a sleeping j: j is a wall, i is stopped by it
-                x[i] -= nxx * pen;
-                y[i] -= nyy * pen;
-                z[i] -= nzz * pen;
-                if (vn < 0) {
-                  vx[i] += nxx * vn;
-                  vy[i] += nyy * vn;
-                  vz[i] += nzz * vn;
-                }
-                vx[i] *= 0.98;
-                vy[i] *= 0.98;
-                this.onFloor[i] |= (nzz < -0.5 ? 1 : 0) | (nzz < 0 ? BORNE : 0);
-                continue;
-              }
-            }
-            const mi = r[i] * r[i] * r[i],
-              mj = r[j] * r[j] * r[j];
-            const wi = mj / (mi + mj),
-              wj = mi / (mi + mj);
-            // part of the overlap a step, past a little slop: all of it at
-            // once makes a heap pop and fizz and never settle
-            const fix = Math.max(0, pen - 0.01) * 0.45;
-            x[i] -= nxx * fix * wi;
-            y[i] -= nyy * fix * wi;
-            z[i] -= nzz * fix * wi;
-            x[j] += nxx * fix * wj;
-            y[j] += nyy * fix * wj;
-            z[j] += nzz * fix * wj;
-            if (vn < 0) {
-              // a slow touch does not bounce at all
-              const e = this.tune.restitution * ((this.kindBounce[this.kind[i]] + this.kindBounce[this.kind[j]]) / 2);
-              const jn = -(1 + (vn < -1.5 ? e : 0)) * vn;
-              vx[i] -= nxx * jn * wi;
-              vy[i] -= nyy * jn * wi;
-              vz[i] -= nzz * jn * wi;
-              vx[j] += nxx * jn * wj;
-              vy[j] += nyy * jn * wj;
-              vz[j] += nzz * jn * wj;
-              // friction along the tangent, capped by the normal impulse
-              const tx = rvx - vn * nxx,
-                ty = rvy - vn * nyy,
-                tz = rvz - vn * nzz;
-              const tl = Math.hypot(tx, ty, tz);
-              if (tl > 1e-5) {
-                const jt = Math.min(tl, this.tune.friction * jn);
-                const fx = (tx / tl) * jt,
-                  fy = (ty / tl) * jt,
-                  fz = (tz / tl) * jt;
-                vx[i] += fx * wi;
-                vy[i] += fy * wi;
-                vz[i] += fz * wi;
-                vx[j] -= fx * wj;
-                vy[j] -= fy * wj;
-                vz[j] -= fz * wj;
-                // and a tumble from it
-                const k = 0.5;
-                this.wx[i] += (nyy * fz - nzz * fy) * k;
-                this.wy[i] += (nzz * fx - nxx * fz) * k;
-                this.wz[i] += (nxx * fy - nyy * fx) * k;
-                this.wx[j] -= (nyy * fz - nzz * fy) * k;
-                this.wy[j] -= (nzz * fx - nxx * fz) * k;
-                this.wz[j] -= (nxx * fy - nyy * fx) * k;
-              }
-            }
-            if (nzz < -0.5) this.onFloor[i] |= 1;
-            if (nzz > 0.5) this.onFloor[j] |= 1;
-            if (nzz < 0) this.onFloor[i] |= BORNE;
-            else if (nzz > 0) this.onFloor[j] |= BORNE;
+            this.touch(i, j, dx, dy, dz, d2, rr);
           }
         }
       }
     }
+  }
+
+  /**
+   * The discs' contacts gone over a second time in a step: each pair with a
+   * disc in it where either was found well in the first time, met in the
+   * order the first going over met them. It is a walk of its own, not the
+   * first walk told to skip whatever is not a disc's: carried through the
+   * first, that cost a world with no discs a twentieth of the frame of a
+   * heap falling, though it never went over anything twice.
+   */
+  private discsAgain() {
+    const { x, y, h, alive, asleep, carried, again, head, next, gx, awake } = this;
+    for (let k = 0, n = this.awakeCount; k < n; k++) {
+      const i = awake[k];
+      if (!alive[i] || asleep[i] || carried[i]) continue;
+      const disc = h[i] > 0;
+      const c = this.cellOf(x[i], y[i]);
+      const cx = c % gx,
+        cy = (c / gx) | 0;
+      for (let oy = -1; oy <= 1; oy++) {
+        const ny = cy + oy;
+        if (ny < 0 || ny >= this.gy) continue;
+        for (let ox = -1; ox <= 1; ox++) {
+          const nx = cx + ox;
+          if (nx < 0 || nx >= gx) continue;
+          for (let j = head[ny * gx + nx]; j >= 0; j = next[j]) {
+            if (j === i || (!asleep[j] && j < i)) continue;
+            if ((disc || h[j] > 0) && (again[i] || again[j])) this.discPair(i, j);
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Two balls that touch, put apart, and bounced off each other by how hard
+   * they met: `dx`, `dy`, `dz` is the way from `i` to `j`, `d2` the square of
+   * how far that is, and `rr` their radii together, which it is less than.
+   * A method of its own, which the walk calls only for a pair that touches.
+   * Written inside the walk, it made every body the walk looked at dearer,
+   * touching or not, by a sixteenth of the frame of a heap falling.
+   */
+  private touch(i: number, j: number, dx: number, dy: number, dz: number, d2: number, rr: number) {
+    const { x, y, z, vx, vy, vz, r, asleep } = this;
+    const d = Math.sqrt(d2);
+    const nxx = dx / d,
+      nyy = dy / d,
+      nzz = dz / d;
+    const pen = rr - d;
+    const rvx = vx[j] - vx[i],
+      rvy = vy[j] - vy[i],
+      rvz = vz[j] - vz[i];
+    const vn = rvx * nxx + rvy * nyy + rvz * nzz;
+    // a sleeper is woken only by something arriving with intent
+    if (asleep[j]) {
+      if (vn < -1.2 || pen > 0.3) this.wake(j);
+      else {
+        // i rests against a sleeping j: j is a wall, i is stopped by it
+        x[i] -= nxx * pen;
+        y[i] -= nyy * pen;
+        z[i] -= nzz * pen;
+        if (vn < 0) {
+          vx[i] += nxx * vn;
+          vy[i] += nyy * vn;
+          vz[i] += nzz * vn;
+        }
+        vx[i] *= 0.98;
+        vy[i] *= 0.98;
+        this.onFloor[i] |= (nzz < -0.5 ? 1 : 0) | (nzz < 0 ? BORNE : 0);
+        return;
+      }
+    }
+    const mi = r[i] * r[i] * r[i],
+      mj = r[j] * r[j] * r[j];
+    const wi = mj / (mi + mj),
+      wj = mi / (mi + mj);
+    // part of the overlap a step, past a little slop: all of it at
+    // once makes a heap pop and fizz and never settle
+    const fix = Math.max(0, pen - 0.01) * 0.45;
+    x[i] -= nxx * fix * wi;
+    y[i] -= nyy * fix * wi;
+    z[i] -= nzz * fix * wi;
+    x[j] += nxx * fix * wj;
+    y[j] += nyy * fix * wj;
+    z[j] += nzz * fix * wj;
+    if (vn < 0) {
+      // a slow touch does not bounce at all
+      const e = this.tune.restitution * ((this.kindBounce[this.kind[i]] + this.kindBounce[this.kind[j]]) / 2);
+      const jn = -(1 + (vn < -1.5 ? e : 0)) * vn;
+      vx[i] -= nxx * jn * wi;
+      vy[i] -= nyy * jn * wi;
+      vz[i] -= nzz * jn * wi;
+      vx[j] += nxx * jn * wj;
+      vy[j] += nyy * jn * wj;
+      vz[j] += nzz * jn * wj;
+      // friction along the tangent, capped by the normal impulse
+      const tx = rvx - vn * nxx,
+        ty = rvy - vn * nyy,
+        tz = rvz - vn * nzz;
+      const tl = Math.hypot(tx, ty, tz);
+      if (tl > 1e-5) {
+        const jt = Math.min(tl, this.tune.friction * jn);
+        const fx = (tx / tl) * jt,
+          fy = (ty / tl) * jt,
+          fz = (tz / tl) * jt;
+        vx[i] += fx * wi;
+        vy[i] += fy * wi;
+        vz[i] += fz * wi;
+        vx[j] -= fx * wj;
+        vy[j] -= fy * wj;
+        vz[j] -= fz * wj;
+        // and a tumble from it
+        const k = 0.5;
+        this.wx[i] += (nyy * fz - nzz * fy) * k;
+        this.wy[i] += (nzz * fx - nxx * fz) * k;
+        this.wz[i] += (nxx * fy - nyy * fx) * k;
+        this.wx[j] -= (nyy * fz - nzz * fy) * k;
+        this.wy[j] -= (nzz * fx - nxx * fz) * k;
+        this.wz[j] -= (nxx * fy - nyy * fx) * k;
+      }
+    }
+    if (nzz < -0.5) this.onFloor[i] |= 1;
+    if (nzz > 0.5) this.onFloor[j] |= 1;
+    if (nzz < 0) this.onFloor[i] |= BORNE;
+    else if (nzz > 0) this.onFloor[j] |= BORNE;
   }
 
   /**

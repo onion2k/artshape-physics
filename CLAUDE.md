@@ -158,9 +158,11 @@ vz?)`, `setOrientation`, `hit(i, vx, vy, vz)` (or writing `vx`/`vy`/`vz` and
 - **Reading:** the typed arrays, `live`, `count`, `loads`, `load`, `axis(i)`,
   `floorAt(x, y)`, `deepest(resting)`, what `collect` was called with,
   `problems(world)`, `stepTogether(world, dt)`, which steps a frame and says
-  what went to sleep off the tick or on a sliver of a window, and
+  what went to sleep off the tick or on a sliver of a window,
   `wokenAgain(world, bodies, steps)`, which counts sleepers woken, looking
-  after every fixed step.
+  after every fixed step, and `countThickness(world)`, which counts every
+  read of a body's thickness from then on, and so how often the world has
+  asked whether a body is a disc.
 
 ## Edge-case checklist
 
@@ -186,6 +188,10 @@ applies:
   `squeezedStill` a disc is never read back going faster than it went in a
   step, nor spinning faster than it turned, on any path that pushes it; a
   new one joins the scene in `test/squeeze.test.ts` that holds it to that.
+  A world with no discs pays nothing for a disc branch: in the walk of
+  pairs, whether a world has discs is asked once a step and whether a body
+  is one once a body, never of every pair looked at, and `countThickness`
+  holds a heap of balls to it.
 - **Rock:** against a face, banking along a wall of several tiles (with and
   without `smoothWalls`), at a corner that stands out, into the inside of a
   corner, and shoved in by a box; never left in it.
@@ -217,22 +223,22 @@ applies:
 
 ## Gates and baselines
 
-| Gate      | Holds the package to                          | Baseline and tolerance                                                                         |
-| --------- | --------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| Format    | prettier's formatting                         | none: pass or fail                                                                             |
-| Types     | strict TypeScript                             | none: pass or fail                                                                             |
-| Lint      | the type-aware rules                          | none: pass or fail                                                                             |
-| Tests     | every behaviour the README claims             | 142 tests at v0.5.0 (131 at v0.4.3, 127 at v0.4.2, 123 at v0.4.1, 120 at v0.4.0, 30 at v0.3.0) |
-| Unchanged | every game's world as v0.3.0 stepped it       | `test/unchanged.json`, bit for bit                                                             |
-| Fuzzer    | the rules a golf ball keeps, struck at random | 24 seeds of 12 shots, each both ways, every rule on every step                                 |
-| Bench     | what a frame costs, in five scenes            | `scripts/bench-baseline.json`, ±20% both ways, 0.0002 ms slack                                 |
+| Gate      | Holds the package to                          | Baseline and tolerance                                                                                        |
+| --------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| Format    | prettier's formatting                         | none: pass or fail                                                                                            |
+| Types     | strict TypeScript                             | none: pass or fail                                                                                            |
+| Lint      | the type-aware rules                          | none: pass or fail                                                                                            |
+| Tests     | every behaviour the README claims             | 143 tests at v0.5.1 (142 at v0.5.0, 131 at v0.4.3, 127 at v0.4.2, 123 at v0.4.1, 120 at v0.4.0, 30 at v0.3.0) |
+| Unchanged | every game's world as v0.3.0 stepped it       | `test/unchanged.json`, bit for bit                                                                            |
+| Fuzzer    | the rules a golf ball keeps, struck at random | 24 seeds of 12 shots, each both ways, every rule on every step                                                |
+| Bench     | what a frame costs, in five scenes            | `scripts/bench-baseline.json`, ±20% both ways, 0.0002 ms slack                                                |
 
 The bench's budgets, in milliseconds a frame on the fastest run, and its
 baselines as written (on an M4 Pro, Node 23.4.0):
 
 | Scene                                                | Stands for            | Budget | Baseline |
 | ---------------------------------------------------- | --------------------- | ------ | -------- |
-| a heap of 2000 balls churned by two pushers          | pushminer             | 3      | 1.87     |
+| a heap of 2000 balls churned by two pushers          | pushminer             | 3      | 1.65     |
 | a bed of 1500 discs, timed while the pusher is in it | coinpush              | 4      | 1.24     |
 | one ball shot round a golf course                    | ooergolf              | 0.1    | 0.0019   |
 | 64 balls on that course at 120 u/s                   | ooergolf, at capacity | 1      | 0.042    |
@@ -240,7 +246,9 @@ baselines as written (on an M4 Pro, Node 23.4.0):
 
 The tolerance is the measured wobble with room to spare: over three runs
 no scene moved by more than 7%. The golf scenes grow as the golf features
-land, and each baseline is written again then, saying why.
+land, and each baseline is written again then, saying why. The churned
+heap's was written again at v0.5.1, when a world with no discs was given
+back the sixth of a frame it had cost since v0.3.0.
 
 ## Releasing
 

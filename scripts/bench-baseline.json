@@ -1,8 +1,8 @@
 {
   "a heap of 2000 balls churned by two pushers": {
-    "relative": 0.11739456452881786,
-    "ms": 1.869,
-    "ref": 15.9203,
+    "relative": 0.10290051229428535,
+    "ms": 1.6546,
+    "ref": 16.0796,
     "awake": 783,
     "live": 2000
   },

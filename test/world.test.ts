@@ -173,6 +173,25 @@ function wokenAgain(w: World, bodies: number[], steps: number): number {
   return woken;
 }
 
+/**
+ * The world's thickness of each body swapped for one that counts how often a
+ * body's is read. Whether a body is a disc is asked by its thickness, so this
+ * is how often the world has asked it. Asked once for every pair looked at, a
+ * world with no discs spent a twelfth of a falling heap's frame on the asking.
+ */
+function countThickness(w: World): { reads: number } {
+  const count = { reads: 0 };
+  const h = new Proxy(w.h, {
+    get(target, key) {
+      if (typeof key === 'string' && /^\d+$/.test(key)) count.reads++;
+      return Reflect.get(target, key) as unknown;
+    },
+    set: (target, key, value) => Reflect.set(target, key, value),
+  });
+  Object.defineProperty(w, 'h', { value: h });
+  return count;
+}
+
 describe('the world', () => {
   it('lets a dropped body come to rest on the floor at its radius, and sleep', () => {
     const w = world();
@@ -671,6 +690,30 @@ describe('the world', () => {
         if (wrong.length) expect.fail(`sleepTogether ${sleepTogether}, frame ${f}: ${wrong.slice(0, 5).join('; ')}`);
       }
     }
+  });
+
+  it('asks no pair of balls whether either is a disc, so a heap of them reads their thickness no more than as many scattered', () => {
+    const N = 400;
+    const reads = (place: (k: number, random: () => number) => [number, number, number]) => {
+      const random = seeded(3);
+      const w = world({ capacity: N, random, holes: [] });
+      for (let k = 0; k < N; k++) w.spawn(k % 50 === 0 ? 1 : 0, ...place(k, random));
+      const count = countThickness(w);
+      // one frame, every body awake through it: none has been awake long enough to sleep
+      w.step(DT, () => {});
+      let awake = 0;
+      for (let i = 0; i < w.count; i++) if (w.alive[i] && !w.asleep[i]) awake++;
+      expect(awake).toBe(N);
+      return count.reads;
+    };
+    // a heap, where each ball has dozens of others near enough to be looked at, and a field of them two cells apart
+    const heaped = reads((_k, random) => {
+      const r = Math.sqrt(random()) * 6,
+        a = random() * Math.PI * 2;
+      return [-40 + Math.cos(a) * r, 15 + Math.sin(a) * r, 1 + random() * 6];
+    });
+    const scattered = reads((k) => [-80 + (k % 20) * 7, -50 + Math.floor(k / 20) * 5, 1]);
+    expect(heaped).toBe(scattered);
   });
 
   it('settles a slow ball by the figures it is given: a slow roll goes on unsettled, or settles only below a lower speed', () => {

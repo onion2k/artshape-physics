@@ -33,8 +33,10 @@ tiles, and what falls into a hole is reported through a callback.
   frame with three hundred awake, and 3.2 with four hundred, and 1.24 on
   average while the pusher is in it. Drawn at its own radius, thickness and orientation,
   a disc at rest is never more than a twentieth of a unit into another.
-  `src/disc.ts` says how, and what each part of it is there to stop. Left
-  alone, a heap can keep a pair of coins awake for good: squeezed a
+  `src/disc.ts` says how, and what each part of it is there to stop. A
+  world with no discs pays nothing for them: no pair of balls is asked
+  whether either is one. Left alone, a heap can keep a pair of coins awake
+  for good: squeezed a
   twentieth into each other by the coins lying on them, too far in to
   sleep, read back going at a unit a second while going nowhere, and waking
   what lies on them. Of two hundred heaps of three hundred coins, 14 to 23
